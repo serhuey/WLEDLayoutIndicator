@@ -50,8 +50,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         super.init()
     }
 
+    private var windowObserver: Any?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         coordinator.start()
+
+        // Agent apps (LSUIElement) can't reliably activate to the foreground.
+        // The only reliable fix: set the Settings window to floating level.
+        windowObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didBecomeKeyNotification,
+            object: nil,
+            queue: .main
+        ) { notification in
+            guard let window = notification.object as? NSWindow,
+                  window.canBecomeKey else { return }
+            MainActor.assumeIsolated {
+                window.level = .floating
+            }
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -68,40 +84,21 @@ struct MenuBarContent: View {
         Text(statusText).foregroundStyle(.secondary)
         Divider()
 
-        Button("Settings…") {
-            Self.openAndActivateSettings()
+        if #available(macOS 14.0, *) {
+            SettingsLink {
+                Text("Settings…")
+            }
+            .keyboardShortcut(",", modifiers: .command)
+        } else {
+            Button("Settings…") {
+                NSApp.activate(ignoringOtherApps: true)
+                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+            }
+            .keyboardShortcut(",", modifiers: .command)
         }
-        .keyboardShortcut(",", modifiers: .command)
 
         Button("Quit") { NSApplication.shared.terminate(nil) }
             .keyboardShortcut("q", modifiers: .command)
-    }
-
-    /// Opens the Settings scene and forces the app to the foreground.
-    /// `SettingsLink` doesn't reliably activate the app (menu-bar-only apps
-    /// have no activation policy), so we do it manually.
-    private static func openAndActivateSettings() {
-        // Temporarily switch to regular activation policy so the window
-        // can come to front, then switch back after a short delay.
-        NSApp.setActivationPolicy(.regular)
-        if #available(macOS 14.0, *) {
-            NSApp.activate()
-        } else {
-            NSApp.activate(ignoringOtherApps: true)
-        }
-        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-
-        // Bring the settings window to front explicitly.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            for window in NSApp.windows where window.title.contains("Settings") || window.title.contains("Preferences") {
-                window.makeKeyAndOrderFront(nil)
-                window.orderFrontRegardless()
-            }
-            // Go back to accessory (no Dock icon) once the window is up.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                NSApp.setActivationPolicy(.accessory)
-            }
-        }
     }
 
     private var statusText: String {
