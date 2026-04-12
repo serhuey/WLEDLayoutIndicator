@@ -68,24 +68,40 @@ struct MenuBarContent: View {
         Text(statusText).foregroundStyle(.secondary)
         Divider()
 
-        // SettingsLink is the Apple-blessed way on macOS 14+. Below that we
-        // fall back to the AppKit selector; the deprecation warning at
-        // runtime is the reason we prefer SettingsLink when available.
-        if #available(macOS 14.0, *) {
-            SettingsLink {
-                Text("Settings…")
-            }
-            .keyboardShortcut(",", modifiers: .command)
-        } else {
-            Button("Settings…") {
-                NSApp.activate(ignoringOtherApps: true)
-                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-            }
-            .keyboardShortcut(",", modifiers: .command)
+        Button("Settings…") {
+            Self.openAndActivateSettings()
         }
+        .keyboardShortcut(",", modifiers: .command)
 
         Button("Quit") { NSApplication.shared.terminate(nil) }
             .keyboardShortcut("q", modifiers: .command)
+    }
+
+    /// Opens the Settings scene and forces the app to the foreground.
+    /// `SettingsLink` doesn't reliably activate the app (menu-bar-only apps
+    /// have no activation policy), so we do it manually.
+    private static func openAndActivateSettings() {
+        // Temporarily switch to regular activation policy so the window
+        // can come to front, then switch back after a short delay.
+        NSApp.setActivationPolicy(.regular)
+        if #available(macOS 14.0, *) {
+            NSApp.activate()
+        } else {
+            NSApp.activate(ignoringOtherApps: true)
+        }
+        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+
+        // Bring the settings window to front explicitly.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            for window in NSApp.windows where window.title.contains("Settings") || window.title.contains("Preferences") {
+                window.makeKeyAndOrderFront(nil)
+                window.orderFrontRegardless()
+            }
+            // Go back to accessory (no Dock icon) once the window is up.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                NSApp.setActivationPolicy(.accessory)
+            }
+        }
     }
 
     private var statusText: String {

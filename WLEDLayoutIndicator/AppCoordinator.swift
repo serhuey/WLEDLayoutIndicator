@@ -18,6 +18,10 @@ public final class AppCoordinator: ObservableObject {
     private let client: WLEDClient
     private var monitorTask: Task<Void, Never>?
     private var configObserver: AnyCancellable?
+    private var sleepObservers: [NSObjectProtocol] = []
+    /// When true, we override brightness to `dimBrightness` instead of config value.
+    private var isDimmed = false
+    private static let dimBrightness = 2
     private let logger = Logger(subsystem: "com.wledlayout.indicator", category: "coordinator")
 
     public init(
@@ -56,6 +60,9 @@ public final class AppCoordinator: ObservableObject {
         if settings.config.wled.host.isEmpty {
             autoDiscoverHost()
         }
+
+        // Dim on sleep / screensaver, restore on wake.
+        subscribeSleepWake()
     }
 
     /// Runs mDNS discovery once and picks the first matching device.
@@ -82,6 +89,11 @@ public final class AppCoordinator: ObservableObject {
         monitorTask?.cancel()
         monitorTask = nil
         configObserver = nil
+        for o in sleepObservers {
+            NSWorkspace.shared.notificationCenter.removeObserver(o)
+            DistributedNotificationCenter.default().removeObserver(o)
+        }
+        sleepObservers = []
         monitor.stop()
     }
 
@@ -100,7 +112,80 @@ public final class AppCoordinator: ObservableObject {
         }
     }
 
-    // MARK: -
+    // MARK: - Sleep / Wake
+
+    private func subscribeSleepWake() {
+        let ws = NSWorkspace.shared.notificationCenter
+        let dc = DistributedNotificationCenter.default()
+
+        // Dim: system sleep or screensaver activation
+        let dimEvents: [(center: Any, name: NSNotification.Name)] = [
+            (ws, NSWorkspace.willSleepNotification),
+            (ws, NSWorkspace.screensDidSleepNotification),
+            (dc, NSNotification.Name("com.apple.screensaver.didstart")),
+        ]
+        for event in dimEvents {
+            let center = event.center
+            let o: NSObjectProtocol
+            if let wsc = center as? NotificationCenter {
+                o = wsc.addObserver(forName: event.name, object: nil, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.handleDim() }
+                }
+            } else {
+                o = dc.addObserver(forName: event.name, object: nil, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.handleDim() }
+                }
+            }
+            sleepObservers.append(o)
+        }
+
+        // Restore: system wake or screensaver stop
+        let wakeEvents: [(center: Any, name: NSNotification.Name)] = [
+            (ws, NSWorkspace.didWakeNotification),
+            (ws, NSWorkspace.screensDidWakeNotification),
+            (dc, NSNotification.Name("com.apple.screensaver.didstop")),
+        ]
+        for event in wakeEvents {
+            let center = event.center
+            let o: NSObjectProtocol
+            if let wsc = center as? NotificationCenter {
+                o = wsc.addObserver(forName: event.name, object: nil, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.handleRestore() }
+                }
+            } else {
+                o = dc.addObserver(forName: event.name, object: nil, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.handleRestore() }
+                }
+            }
+            sleepObservers.append(o)
+        }
+    }
+
+    private func handleDim() {
+        guard !isDimmed else { return }
+        isDimmed = true
+        logger.info("Dimming WLED (sleep/screensaver)")
+        Task { await sendCurrentColor() }
+    }
+
+    private func handleRestore() {
+        guard isDimmed else { return }
+        isDimmed = false
+        logger.info("Restoring WLED brightness (wake/screensaver stop)")
+        Task { await sendCurrentColor() }
+    }
+
+    /// Sends the current colour with effective brightness (dimmed or config).
+    private func sendCurrentColor() async {
+        var wled = settings.config.wled
+        if isDimmed {
+            wled.brightness = Self.dimBrightness
+        }
+        let color = ColorMapper.color(for: currentSourceID, config: settings.config)
+        await client.setColor(color, wled: wled)
+    }
+
+    // MARK: - Layout
 
     private func handleLayoutChange(sourceID: String) async {
         currentSourceID = sourceID
@@ -109,9 +194,11 @@ public final class AppCoordinator: ObservableObject {
         currentColor = color
         logger.info("layout=\(sourceID, privacy: .public) -> rgb=\(color.r),\(color.g),\(color.b)")
 
-        await client.setColor(color, wled: config.wled)
-        // The actor silently eats errors, so we optimistically mark OK.
-        // A future improvement: have WLEDClient publish a status stream.
+        var wled = config.wled
+        if isDimmed {
+            wled.brightness = Self.dimBrightness
+        }
+        await client.setColor(color, wled: wled)
         status = .ok(lastSent: color)
     }
 }
