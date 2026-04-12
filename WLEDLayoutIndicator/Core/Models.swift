@@ -1,0 +1,128 @@
+import Foundation
+
+/// Domain models for WLEDLayoutIndicator.
+///
+/// All three types are marked `nonisolated` so they opt out of the module's
+/// default actor isolation (Xcode 26 / Swift 6.3 may default to `@MainActor`
+/// per SE-0466). These are plain value types — we want them usable from any
+/// context, including the `WLEDClient` actor, without forcing `await` hops.
+
+// MARK: - RGB
+
+public nonisolated struct RGB: Codable, Equatable, Hashable, Sendable {
+    public var r: UInt8
+    public var g: UInt8
+    public var b: UInt8
+
+    public init(r: UInt8, g: UInt8, b: UInt8) {
+        self.r = r
+        self.g = g
+        self.b = b
+    }
+
+    /// Integer array form expected by WLED JSON API: `[R, G, B]`.
+    public var jsonArray: [Int] { [Int(r), Int(g), Int(b)] }
+}
+
+// MARK: - Config
+
+/// Full, user-editable configuration. Persisted as JSON.
+public nonisolated struct Config: Codable, Equatable, Sendable {
+
+    public nonisolated struct WLED: Codable, Equatable, Sendable {
+        /// IP address or mDNS name, e.g. "192.168.1.42" or "atom.local".
+        /// Scheme/port are not stored — always `http://<host>/json/state`.
+        public var host: String
+        /// 0...255
+        public var brightness: Int
+        /// WLED segment id. Atom Matrix has a single default segment = 0.
+        public var segmentId: Int
+        /// Number of LEDs in the segment. 25 for Atom Matrix 5x5.
+        public var ledCount: Int
+
+        public init(host: String, brightness: Int, segmentId: Int, ledCount: Int) {
+            self.host = host
+            self.brightness = brightness
+            self.segmentId = segmentId
+            self.ledCount = ledCount
+        }
+    }
+
+    public var wled: WLED
+    /// Keyed by Carbon `kTISPropertyInputSourceID`, e.g. "com.apple.keylayout.Russian".
+    public var mapping: [String: RGB]
+    /// Fallback for source IDs not present in `mapping`.
+    public var defaultColor: RGB
+    /// Launch app at login (persisted only — application of this setting
+    /// is the responsibility of `SMAppService` at runtime).
+    public var launchAtLogin: Bool
+
+    public init(wled: WLED, mapping: [String: RGB], defaultColor: RGB, launchAtLogin: Bool) {
+        self.wled = wled
+        self.mapping = mapping
+        self.defaultColor = defaultColor
+        self.launchAtLogin = launchAtLogin
+    }
+
+    /// Defaults used on first launch (or when the config file is missing/corrupt).
+    /// The mapping starts empty — `SettingsStore` auto-populates it from the
+    /// system's enabled layouts via `Config.buildMapping(for:)`.
+    public static let initial = Config(
+        wled: .init(host: "", brightness: 128, segmentId: 0, ledCount: 25),
+        mapping: [:],
+        defaultColor: RGB(r: 80, g: 80, b: 80),
+        launchAtLogin: false
+    )
+
+    /// Builds a mapping from an array of installed source IDs by matching
+    /// each ID against known language patterns.
+    public static func buildMapping(for sourceIDs: [String]) -> [String: RGB] {
+        var result: [String: RGB] = [:]
+        for id in sourceIDs {
+            result[id] = knownColor(for: id)
+        }
+        return result
+    }
+
+    /// Returns a preset colour for well-known keyboard layouts, or a neutral
+    /// grey for anything unrecognised.
+    public static func knownColor(for sourceID: String) -> RGB {
+        let lower = sourceID.lowercased()
+
+        // Russian / Ukrainian / Belarusian — red
+        if lower.contains("russian") || lower.contains("ukrainian")
+            || lower.contains("belarusian") {
+            return RGB(r: 255, g: 40, b: 40)
+        }
+        // English variants — blue
+        if lower.hasSuffix(".us") || lower.hasSuffix(".abc")
+            || lower.contains("british") || lower.contains("australian")
+            || lower.contains("canadian") || lower.contains("usdvorak")
+            || lower.contains("uscolemak") || lower.contains("usinternational") {
+            return RGB(r: 0, g: 120, b: 255)
+        }
+        // German — yellow
+        if lower.contains("german") {
+            return RGB(r: 255, g: 200, b: 0)
+        }
+        // French — cyan
+        if lower.contains("french") {
+            return RGB(r: 0, g: 200, b: 200)
+        }
+        // Spanish — orange
+        if lower.contains("spanish") {
+            return RGB(r: 255, g: 140, b: 0)
+        }
+        // Unrecognised — grey
+        return RGB(r: 80, g: 80, b: 80)
+    }
+}
+
+// MARK: - Status
+
+/// Last-known state of the WLED link, surfaced in the menu bar.
+public nonisolated enum LinkStatus: Equatable, Sendable {
+    case idle
+    case ok(lastSent: RGB)
+    case failed(message: String)
+}
