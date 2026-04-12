@@ -23,7 +23,9 @@ Switch between English and Russian — the indicator instantly changes from blue
 - **"Re-detect layouts & WLED device"** button — one-click reset to re-scan everything
 - **Launch at login** via `SMAppService`
 - **Resilient networking** — retry with exponential backoff (100 ms → 300 ms → 1 s), request coalescing, 2 s timeout
+- **Sleep / screensaver dimming** — dims WLED to near-zero brightness on sleep or screensaver, restores on wake
 - **Wake-from-sleep re-sync** — re-sends current colour when the Mac wakes up
+- **Floating Settings window** — always appears on top (required for agent apps without Dock presence)
 
 ## Requirements
 
@@ -157,7 +159,7 @@ The app sends a single POST per layout change:
 ```
 WLEDLayoutIndicator/
 ├── WLEDLayoutIndicatorApp.swift     # @main, NSApplicationDelegateAdaptor, MenuBarExtra
-├── AppCoordinator.swift             # Wires monitor → mapper → client, auto-discovery
+├── AppCoordinator.swift             # Wires monitor → mapper → client, auto-discovery, sleep/wake dimming
 ├── Core/
 │   ├── Models.swift                 # Config, RGB, LinkStatus (nonisolated value types)
 │   ├── SettingsStore.swift          # JSON persistence + first-launch auto-detect
@@ -184,6 +186,16 @@ The project compiles cleanly under Swift 6's strict concurrency checking (Xcode 
 - **`WLEDClient`** is a Swift `actor` — all mutable state (`pending`, `lastSentKey`, `runner`) is actor-isolated.
 - **`LayoutMonitor`**, **`SettingsStore`**, **`AppCoordinator`** are `@MainActor` — they own UI-observable state and interact with AppKit/SwiftUI.
 - **`WLEDDiscovery`** uses `NWBrowser` callbacks on a background queue, then hops to `@MainActor` via `Task { @MainActor in }` with pre-bound `let s = self` to satisfy Swift 6's strict `Sendable` requirements.
+
+## Building the standalone .app
+
+```bash
+cd ~/Projects/WLEDLayoutIndicator
+xcodebuild -scheme WLEDLayoutIndicator -configuration Release -derivedDataPath build
+cp -R build/Build/Products/Release/WLEDLayoutIndicator.app /Applications/
+```
+
+First launch: right-click → **Open** → confirm (unsigned app). After that it opens normally. Enable **Launch at login** in Settings to start automatically.
 
 ## Open items
 
