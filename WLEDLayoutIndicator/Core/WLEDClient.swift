@@ -17,11 +17,14 @@ public actor WLEDClient {
     struct Body: Encodable {
         let on: Bool
         let bri: Int
+        /// Transition time in 100 ms units. 1 = 100 ms, 7 = 700 ms (WLED default).
+        let transition: Int
         let seg: [Segment]
+        /// Only sends `id`, `col` and `fx`. Does NOT send `start`/`stop` —
+        /// those are already configured in WLED itself (e.g. 2D matrix 5×5).
+        /// Overriding them would clobber the device's own segment setup.
         struct Segment: Encodable {
             let id: Int
-            let start: Int
-            let stop: Int
             let col: [[Int]]
             let fx: Int
         }
@@ -38,12 +41,18 @@ public actor WLEDClient {
     private let session: URLSession
     private let logger = Logger(subsystem: "com.wledlayout.indicator", category: "client")
 
-    /// Currently in-flight (or pending) colour. When set, the run loop
+    /// Currently in-flight (or pending) state. When set, the run loop
     /// will pick up the latest value, sleep after a retry, and re-check.
     private var pending: (rgb: RGB, wled: Config.WLED)?
-    /// Last successfully-sent colour for debouncing.
-    private var lastSent: RGB?
+    /// Last successfully-sent state for debouncing (colour + brightness).
+    private var lastSentKey: DedupKey?
     private var runner: Task<Void, Never>?
+
+    /// Captures everything that should trigger a re-send when changed.
+    private nonisolated struct DedupKey: Equatable {
+        let rgb: RGB
+        let brightness: Int
+    }
 
     /// Retry schedule in nanoseconds.
     private let retryDelays: [UInt64] = [
@@ -61,8 +70,9 @@ public actor WLEDClient {
     /// Queue a colour to be sent to WLED. Returns immediately.
     /// The actor will coalesce rapid calls and deliver only the latest.
     public func setColor(_ rgb: RGB, wled: Config.WLED) {
-        if rgb == lastSent && runner == nil {
-            // Debounce: same as last successful and no retry in progress.
+        let key = DedupKey(rgb: rgb, brightness: wled.brightness)
+        if key == lastSentKey && runner == nil {
+            // Debounce: same colour+brightness as last successful send.
             return
         }
         pending = (rgb, wled)
@@ -86,7 +96,7 @@ public actor WLEDClient {
             pending = nil
             do {
                 try await sendWithRetry(rgb: current.rgb, wled: current.wled)
-                lastSent = current.rgb
+                lastSentKey = DedupKey(rgb: current.rgb, brightness: current.wled.brightness)
             } catch {
                 logger.error("WLED send failed: \(String(describing: error), privacy: .public)")
                 // Failures do not clobber the caller — status surfaces via AppCoordinator observation.
@@ -126,11 +136,10 @@ public actor WLEDClient {
         let body = Body(
             on: true,
             bri: max(0, min(255, wled.brightness)),
+            transition: 1,  // 100 ms — fast but still smooth
             seg: [
                 .init(
                     id: wled.segmentId,
-                    start: 0,
-                    stop: wled.ledCount,
                     col: [rgb.jsonArray],
                     fx: 0
                 )

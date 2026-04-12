@@ -109,22 +109,43 @@ public final class LayoutMonitor {
     /// that are both enabled (`kTISPropertyInputSourceIsEnabled`) and
     /// selectable (`kTISPropertyInputSourceIsSelectCapable`).
     static func enabledKeyboardSourceIDs() -> [String] {
-        let filter: CFDictionary = [
-            kTISPropertyInputSourceCategory as String: kTISCategoryKeyboardInputSource as String,
-            kTISPropertyInputSourceIsEnabled as String: true,
-            kTISPropertyInputSourceIsSelectCapable as String: true,
-        ] as CFDictionary
-
-        guard let list = TISCreateInputSourceList(filter, false)?.takeRetainedValue()
-                as? [TISInputSource] else {
+        // First get ALL input sources (no filter), then filter in Swift.
+        // Building a CF filter dictionary from Swift is fragile across
+        // macOS / Swift versions, so we do it the reliable way.
+        guard let allSources = TISCreateInputSourceList(nil, false)?
+                .takeRetainedValue() as? [TISInputSource] else {
             return []
         }
 
-        return list.compactMap { source in
-            guard let ptr = TISGetInputSourceProperty(source, kTISPropertyInputSourceID) else {
+        return allSources.compactMap { source in
+            // Must be a keyboard layout.
+            guard let catPtr = TISGetInputSourceProperty(source, kTISPropertyInputSourceCategory) else {
                 return nil
             }
-            return Unmanaged<CFString>.fromOpaque(ptr).takeUnretainedValue() as String
+            let category = Unmanaged<CFString>.fromOpaque(catPtr).takeUnretainedValue() as String
+            guard category == (kTISCategoryKeyboardInputSource as String) else {
+                return nil
+            }
+
+            // Must be enabled.
+            guard let enabledPtr = TISGetInputSourceProperty(source, kTISPropertyInputSourceIsEnabled) else {
+                return nil
+            }
+            let enabled = Unmanaged<CFBoolean>.fromOpaque(enabledPtr).takeUnretainedValue()
+            guard CFBooleanGetValue(enabled) else { return nil }
+
+            // Must be selectable (user can switch to it).
+            guard let selectPtr = TISGetInputSourceProperty(source, kTISPropertyInputSourceIsSelectCapable) else {
+                return nil
+            }
+            let selectable = Unmanaged<CFBoolean>.fromOpaque(selectPtr).takeUnretainedValue()
+            guard CFBooleanGetValue(selectable) else { return nil }
+
+            // Get the source ID.
+            guard let idPtr = TISGetInputSourceProperty(source, kTISPropertyInputSourceID) else {
+                return nil
+            }
+            return Unmanaged<CFString>.fromOpaque(idPtr).takeUnretainedValue() as String
         }
     }
 }

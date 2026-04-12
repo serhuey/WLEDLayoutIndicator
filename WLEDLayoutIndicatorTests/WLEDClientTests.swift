@@ -112,8 +112,7 @@ final class WLEDClientTests: XCTestCase {
         XCTAssertEqual(json?["on"] as? Bool, true)
         XCTAssertEqual(json?["bri"] as? Int, 128)
         let segs = json?["seg"] as? [[String: Any]]
-        XCTAssertEqual(segs?.first?["start"] as? Int, 0)
-        XCTAssertEqual(segs?.first?["stop"] as? Int, 25)
+        XCTAssertEqual(segs?.first?["id"] as? Int, 0)
         let col = segs?.first?["col"] as? [[Int]]
         XCTAssertEqual(col, [[255, 0, 0]])
     }

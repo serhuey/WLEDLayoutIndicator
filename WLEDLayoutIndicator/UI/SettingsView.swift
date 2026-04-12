@@ -1,5 +1,6 @@
 import SwiftUI
 import ServiceManagement
+import Combine
 
 struct SettingsView: View {
 
@@ -84,6 +85,16 @@ struct SettingsView: View {
                     ColorPicker("", selection: defaultColorBinding, supportsOpacity: false)
                         .labelsHidden()
                 }
+            }
+
+            Section("Reset") {
+                Button("Re-detect layouts & WLED device") {
+                    resetAutoConfig()
+                }
+                .foregroundStyle(.red)
+                Text("Re-scans installed keyboard layouts and searches for a WLED device on the network. Replaces current host and layout mappings.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("System") {
@@ -178,6 +189,27 @@ struct SettingsView: View {
     }
 
     // MARK: - Actions
+
+    private func resetAutoConfig() {
+        // 1. Re-detect keyboard layouts
+        let ids = LayoutMonitor.enabledKeyboardSourceIDs()
+        settings.update { config in
+            config.mapping = Config.buildMapping(for: ids)
+        }
+
+        // 2. Re-discover WLED device
+        discovery.start()
+        var observer: AnyCancellable?
+        observer = discovery.$devices
+            .filter { !$0.isEmpty }
+            .first()
+            .sink { [settings] devices in
+                if let first = devices.first {
+                    settings.update { $0.wled.host = first.hostname }
+                }
+                observer?.cancel()
+            }
+    }
 
     private func addMapping() {
         let id = newSourceID.trimmingCharacters(in: .whitespaces)

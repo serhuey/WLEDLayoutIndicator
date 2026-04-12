@@ -29,10 +29,12 @@ public final class SettingsStore: ObservableObject {
 
         if let loaded = Self.loadFromDisk(url: fileURL) {
             self.config = loaded
+            logger.info("Loaded config from disk (\(loaded.mapping.count) layouts)")
         } else {
             // First launch: detect installed keyboard layouts and pre-populate
             // the mapping with known colours.
             let ids = systemSourceIDs ?? LayoutMonitor.enabledKeyboardSourceIDs()
+            logger.info("First launch — detected \(ids.count) keyboard layouts: \(ids.joined(separator: ", "), privacy: .public)")
             var initial = Config.initial
             initial.mapping = Config.buildMapping(for: ids)
             self.config = initial

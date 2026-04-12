@@ -43,12 +43,39 @@ public final class AppCoordinator: ObservableObject {
 
         // React to config edits: re-send the current colour (which may be
         // different now after an edit to the mapping or brightness).
+        // Debounce 0.15 s so dragging the brightness slider doesn't flood WLED.
         configObserver = settings.$config
             .dropFirst()
+            .debounce(for: .milliseconds(150), scheduler: RunLoop.main)
             .sink { [weak self] _ in
                 guard let self else { return }
                 Task { await self.handleLayoutChange(sourceID: self.currentSourceID) }
             }
+
+        // If no host is configured yet, auto-discover on the network.
+        if settings.config.wled.host.isEmpty {
+            autoDiscoverHost()
+        }
+    }
+
+    /// Runs mDNS discovery once and picks the first matching device.
+    private func autoDiscoverHost() {
+        let discovery = WLEDDiscovery()
+        discovery.start()
+
+        // Observe results for up to 5 seconds (discovery auto-stops).
+        var observer: AnyCancellable?
+        observer = discovery.$devices
+            .filter { !$0.isEmpty }
+            .first()
+            .sink { [weak self] devices in
+                guard let self, let first = devices.first else { return }
+                self.logger.info("Auto-discovered WLED: \(first.hostname, privacy: .public)")
+                self.settings.update { $0.wled.host = first.hostname }
+                observer?.cancel()
+            }
+        // The AnyCancellable is retained by the closure via `observer` until
+        // it fires or discovery times out and gets deallocated.
     }
 
     public func stop() {
