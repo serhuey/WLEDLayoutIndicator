@@ -57,19 +57,28 @@ struct SettingsView: View {
                 }
             }
 
-            Section("Layout → Color") {
+            Section("Layout → Color & Pattern") {
                 ForEach(sortedSourceIDs, id: \.self) { id in
-                    HStack {
-                        Text(id).font(.system(.body, design: .monospaced))
-                        Spacer()
-                        ColorPicker("", selection: colorBinding(for: id), supportsOpacity: false)
-                            .labelsHidden()
-                        Button {
-                            removeMapping(id)
-                        } label: {
-                            Image(systemName: "trash")
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text(id).font(.system(.body, design: .monospaced))
+                            Spacer()
+                            ColorPicker("", selection: colorBinding(for: id), supportsOpacity: false)
+                                .labelsHidden()
+                            Button {
+                                removeMapping(id)
+                            } label: {
+                                Image(systemName: "trash")
+                            }
+                            .buttonStyle(.borderless)
                         }
-                        .buttonStyle(.borderless)
+                        HStack {
+                            PatternEditor(
+                                pattern: patternBinding(for: id),
+                                color: (settings.config.mapping[id]?.color ?? settings.config.defaultEntry.color).swiftUI
+                            )
+                            PatternEditor.Presets(pattern: patternBinding(for: id))
+                        }
                     }
                 }
                 HStack {
@@ -79,11 +88,20 @@ struct SettingsView: View {
                         .disabled(newSourceID.isEmpty)
                 }
 
-                HStack {
-                    Text("Default (fallback)")
-                    Spacer()
-                    ColorPicker("", selection: defaultColorBinding, supportsOpacity: false)
-                        .labelsHidden()
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("Default (fallback)")
+                        Spacer()
+                        ColorPicker("", selection: defaultColorBinding, supportsOpacity: false)
+                            .labelsHidden()
+                    }
+                    HStack {
+                        PatternEditor(
+                            pattern: defaultPatternBinding,
+                            color: settings.config.defaultEntry.color.swiftUI
+                        )
+                        PatternEditor.Presets(pattern: defaultPatternBinding)
+                    }
                 }
             }
 
@@ -166,15 +184,33 @@ struct SettingsView: View {
 
     private var defaultColorBinding: Binding<Color> {
         Binding(
-            get: { settings.config.defaultColor.swiftUI },
-            set: { v in settings.update { $0.defaultColor = v.rgb } }
+            get: { settings.config.defaultEntry.color.swiftUI },
+            set: { v in settings.update { $0.defaultEntry.color = v.rgb } }
+        )
+    }
+
+    private var defaultPatternBinding: Binding<Pattern> {
+        Binding(
+            get: { settings.config.defaultEntry.pattern },
+            set: { v in settings.update { $0.defaultEntry.pattern = v } }
         )
     }
 
     private func colorBinding(for id: String) -> Binding<Color> {
         Binding(
-            get: { (settings.config.mapping[id] ?? settings.config.defaultColor).swiftUI },
-            set: { v in settings.update { $0.mapping[id] = v.rgb } }
+            get: { (settings.config.mapping[id]?.color ?? settings.config.defaultEntry.color).swiftUI },
+            set: { v in settings.update {
+                $0.mapping[id, default: $0.defaultEntry].color = v.rgb
+            }}
+        )
+    }
+
+    private func patternBinding(for id: String) -> Binding<Pattern> {
+        Binding(
+            get: { settings.config.mapping[id]?.pattern ?? .solid },
+            set: { v in settings.update {
+                $0.mapping[id, default: $0.defaultEntry].pattern = v
+            }}
         )
     }
 
@@ -214,7 +250,7 @@ struct SettingsView: View {
     private func addMapping() {
         let id = newSourceID.trimmingCharacters(in: .whitespaces)
         guard !id.isEmpty else { return }
-        settings.update { $0.mapping[id] = $0.defaultColor }
+        settings.update { $0.mapping[id] = $0.defaultEntry }
         newSourceID = ""
     }
 

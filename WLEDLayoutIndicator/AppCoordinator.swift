@@ -101,10 +101,10 @@ public final class AppCoordinator: ObservableObject {
     /// sees an immediate attempt.
     public func testConnection() async -> Result<Void, Error> {
         let wled = settings.config.wled
-        let probe = ColorMapper.color(for: currentSourceID, config: settings.config)
+        let entry = ColorMapper.entry(for: currentSourceID, config: settings.config)
         do {
-            try await client.sendOnce(probe, wled: wled)
-            status = .ok(lastSent: probe)
+            try await client.sendOnce(entry, wled: wled)
+            status = .ok(lastSent: entry.color)
             return .success(())
         } catch {
             status = .failed(message: String(describing: error))
@@ -165,24 +165,24 @@ public final class AppCoordinator: ObservableObject {
         guard !isDimmed else { return }
         isDimmed = true
         logger.info("Dimming WLED (sleep/screensaver)")
-        Task { await sendCurrentColor() }
+        Task { await sendCurrentEntry() }
     }
 
     private func handleRestore() {
         guard isDimmed else { return }
         isDimmed = false
         logger.info("Restoring WLED brightness (wake/screensaver stop)")
-        Task { await sendCurrentColor() }
+        Task { await sendCurrentEntry() }
     }
 
-    /// Sends the current colour with effective brightness (dimmed or config).
-    private func sendCurrentColor() async {
+    /// Sends the current entry with effective brightness (dimmed or config).
+    private func sendCurrentEntry() async {
         var wled = settings.config.wled
         if isDimmed {
             wled.brightness = Self.dimBrightness
         }
-        let color = ColorMapper.color(for: currentSourceID, config: settings.config)
-        await client.setColor(color, wled: wled)
+        let entry = ColorMapper.entry(for: currentSourceID, config: settings.config)
+        await client.setEntry(entry, wled: wled)
     }
 
     // MARK: - Layout
@@ -190,15 +190,15 @@ public final class AppCoordinator: ObservableObject {
     private func handleLayoutChange(sourceID: String) async {
         currentSourceID = sourceID
         let config = settings.config
-        let color = ColorMapper.color(for: sourceID, config: config)
-        currentColor = color
-        logger.info("layout=\(sourceID, privacy: .public) -> rgb=\(color.r),\(color.g),\(color.b)")
+        let entry = ColorMapper.entry(for: sourceID, config: config)
+        currentColor = entry.color
+        logger.info("layout=\(sourceID, privacy: .public) -> rgb=\(entry.color.r),\(entry.color.g),\(entry.color.b)")
 
         var wled = config.wled
         if isDimmed {
             wled.brightness = Self.dimBrightness
         }
-        await client.setColor(color, wled: wled)
-        status = .ok(lastSent: color)
+        await client.setEntry(entry, wled: wled)
+        status = .ok(lastSent: entry.color)
     }
 }

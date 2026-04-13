@@ -17,19 +17,17 @@ final class SettingsStoreTests: XCTestCase {
     }
 
     func test_firstLaunch_createsDefaultConfig() throws {
-        // Pass explicit source IDs so we don't depend on the test runner's
-        // actual installed keyboards.
         let fakeIDs = ["com.apple.keylayout.US", "com.apple.keylayout.Russian"]
         let store = SettingsStore(directory: tmpDir, systemSourceIDs: fakeIDs)
 
-        // Mapping should contain exactly the IDs we passed.
         XCTAssertEqual(store.config.mapping.count, 2)
-        XCTAssertEqual(store.config.mapping["com.apple.keylayout.US"],
+        XCTAssertEqual(store.config.mapping["com.apple.keylayout.US"]?.color,
                        RGB(r: 0, g: 120, b: 255))
-        XCTAssertEqual(store.config.mapping["com.apple.keylayout.Russian"],
+        XCTAssertEqual(store.config.mapping["com.apple.keylayout.Russian"]?.color,
                        RGB(r: 255, g: 40, b: 40))
+        // Default pattern is solid
+        XCTAssertEqual(store.config.mapping["com.apple.keylayout.US"]?.pattern, .solid)
 
-        // File should exist on disk after first launch.
         let file = tmpDir.appendingPathComponent("config.json")
         XCTAssertTrue(FileManager.default.fileExists(atPath: file.path))
     }
@@ -37,26 +35,29 @@ final class SettingsStoreTests: XCTestCase {
     func test_firstLaunch_unknownLayout_getsGrey() throws {
         let fakeIDs = ["com.apple.keylayout.Klingon"]
         let store = SettingsStore(directory: tmpDir, systemSourceIDs: fakeIDs)
-        XCTAssertEqual(store.config.mapping["com.apple.keylayout.Klingon"],
+        XCTAssertEqual(store.config.mapping["com.apple.keylayout.Klingon"]?.color,
                        RGB(r: 80, g: 80, b: 80))
     }
 
     func test_update_persistsAndRoundTrips() throws {
         let store = SettingsStore(directory: tmpDir, systemSourceIDs: [])
+        var customPattern = Pattern.blank
+        customPattern[1, 1] = true
         store.update {
             $0.wled.host = "192.168.1.100"
             $0.wled.brightness = 64
-            $0.mapping["com.apple.keylayout.Dvorak"] = RGB(r: 10, g: 20, b: 30)
+            $0.mapping["com.apple.keylayout.Dvorak"] = LayoutEntry(
+                color: RGB(r: 10, g: 20, b: 30),
+                pattern: customPattern
+            )
         }
 
-        // New store reads same directory → should load the edited values.
         let reloaded = SettingsStore(directory: tmpDir, systemSourceIDs: [])
         XCTAssertEqual(reloaded.config.wled.host, "192.168.1.100")
         XCTAssertEqual(reloaded.config.wled.brightness, 64)
-        XCTAssertEqual(
-            reloaded.config.mapping["com.apple.keylayout.Dvorak"],
-            RGB(r: 10, g: 20, b: 30)
-        )
+        let entry = reloaded.config.mapping["com.apple.keylayout.Dvorak"]
+        XCTAssertEqual(entry?.color, RGB(r: 10, g: 20, b: 30))
+        XCTAssertEqual(entry?.pattern, customPattern)
     }
 
     func test_update_noChange_doesNothing() {

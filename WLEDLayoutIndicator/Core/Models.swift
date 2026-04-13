@@ -24,6 +24,44 @@ public nonisolated struct RGB: Codable, Equatable, Hashable, Sendable {
     public var jsonArray: [Int] { [Int(r), Int(g), Int(b)] }
 }
 
+// MARK: - Pattern
+
+/// 5×5 pixel bitmap. `true` = LED on (in the layout's colour), `false` = off.
+/// Stored as a flat 25-element array in row-major order (row 0 = top).
+public nonisolated struct Pattern: Codable, Equatable, Hashable, Sendable {
+    /// 25 bools, row-major. Index = row * 5 + col.
+    public var pixels: [Bool]
+
+    public init(pixels: [Bool]) {
+        precondition(pixels.count == 25)
+        self.pixels = pixels
+    }
+
+    /// All LEDs on (solid fill — legacy behaviour).
+    public static let solid = Pattern(pixels: Array(repeating: true, count: 25))
+
+    /// All LEDs off.
+    public static let blank = Pattern(pixels: Array(repeating: false, count: 25))
+
+    public subscript(row: Int, col: Int) -> Bool {
+        get { pixels[row * 5 + col] }
+        set { pixels[row * 5 + col] = newValue }
+    }
+}
+
+// MARK: - LayoutEntry
+
+/// Per-layout configuration: colour + which LEDs are lit.
+public nonisolated struct LayoutEntry: Codable, Equatable, Hashable, Sendable {
+    public var color: RGB
+    public var pattern: Pattern
+
+    public init(color: RGB, pattern: Pattern = .solid) {
+        self.color = color
+        self.pattern = pattern
+    }
+}
+
 // MARK: - Config
 
 /// Full, user-editable configuration. Persisted as JSON.
@@ -50,17 +88,17 @@ public nonisolated struct Config: Codable, Equatable, Sendable {
 
     public var wled: WLED
     /// Keyed by Carbon `kTISPropertyInputSourceID`, e.g. "com.apple.keylayout.Russian".
-    public var mapping: [String: RGB]
+    public var mapping: [String: LayoutEntry]
     /// Fallback for source IDs not present in `mapping`.
-    public var defaultColor: RGB
+    public var defaultEntry: LayoutEntry
     /// Launch app at login (persisted only — application of this setting
     /// is the responsibility of `SMAppService` at runtime).
     public var launchAtLogin: Bool
 
-    public init(wled: WLED, mapping: [String: RGB], defaultColor: RGB, launchAtLogin: Bool) {
+    public init(wled: WLED, mapping: [String: LayoutEntry], defaultEntry: LayoutEntry, launchAtLogin: Bool) {
         self.wled = wled
         self.mapping = mapping
-        self.defaultColor = defaultColor
+        self.defaultEntry = defaultEntry
         self.launchAtLogin = launchAtLogin
     }
 
@@ -70,16 +108,16 @@ public nonisolated struct Config: Codable, Equatable, Sendable {
     public static let initial = Config(
         wled: .init(host: "", brightness: 128, segmentId: 0, ledCount: 25),
         mapping: [:],
-        defaultColor: RGB(r: 80, g: 80, b: 80),
+        defaultEntry: LayoutEntry(color: RGB(r: 80, g: 80, b: 80)),
         launchAtLogin: false
     )
 
     /// Builds a mapping from an array of installed source IDs by matching
     /// each ID against known language patterns.
-    public static func buildMapping(for sourceIDs: [String]) -> [String: RGB] {
-        var result: [String: RGB] = [:]
+    public static func buildMapping(for sourceIDs: [String]) -> [String: LayoutEntry] {
+        var result: [String: LayoutEntry] = [:]
         for id in sourceIDs {
-            result[id] = knownColor(for: id)
+            result[id] = LayoutEntry(color: knownColor(for: id))
         }
         return result
     }

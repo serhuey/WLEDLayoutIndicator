@@ -30,8 +30,6 @@ final class StubURLProtocol: URLProtocol {
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
-        // URLSession strips httpBody from requests delivered here; it sets
-        // `httpBodyStream` instead. Read it for assertions.
         if let stream = request.httpBodyStream {
             let data = Self.readAll(stream: stream)
             Self.lock.lock()
@@ -96,15 +94,16 @@ final class WLEDClientTests: XCTestCase {
         session = URLSession(configuration: config)
     }
 
-    // MARK: - Success
+    // MARK: - Success with solid pattern
 
-    func test_sendOnce_sendsExpectedJSON() async throws {
+    func test_sendOnce_solid_sendsPerPixelJSON() async throws {
         StubURLProtocol.setHandler { _ in
             .init(status: 200, body: Data("{\"success\":true}".utf8))
         }
         let client = WLEDClient(session: session)
+        let entry = LayoutEntry(color: RGB(r: 255, g: 0, b: 0), pattern: .solid)
 
-        try await client.sendOnce(RGB(r: 255, g: 0, b: 0), wled: wled)
+        try await client.sendOnce(entry, wled: wled)
 
         let bodies = StubURLProtocol.recordedBodies
         XCTAssertEqual(bodies.count, 1)
@@ -113,8 +112,40 @@ final class WLEDClientTests: XCTestCase {
         XCTAssertEqual(json?["bri"] as? Int, 128)
         let segs = json?["seg"] as? [[String: Any]]
         XCTAssertEqual(segs?.first?["id"] as? Int, 0)
-        let col = segs?.first?["col"] as? [[Int]]
-        XCTAssertEqual(col, [[255, 0, 0]])
+        // "i" should be a flat array of 75 ints (25 LEDs × 3 channels)
+        let pixels = segs?.first?["i"] as? [Int]
+        XCTAssertEqual(pixels?.count, 75)
+        // First LED should be red
+        XCTAssertEqual(Array(pixels![0..<3]), [255, 0, 0])
+        // Last LED should also be red (solid pattern)
+        XCTAssertEqual(Array(pixels![72..<75]), [255, 0, 0])
+    }
+
+    // MARK: - Pattern with some pixels off
+
+    func test_sendOnce_partialPattern_sendsCorrectPixels() async throws {
+        StubURLProtocol.setHandler { _ in
+            .init(status: 200, body: Data("{\"success\":true}".utf8))
+        }
+        let client = WLEDClient(session: session)
+        var pattern = Pattern.blank
+        pattern[0, 0] = true  // index 0
+        pattern[2, 2] = true  // index 12
+        let entry = LayoutEntry(color: RGB(r: 0, g: 255, b: 0), pattern: pattern)
+
+        try await client.sendOnce(entry, wled: wled)
+
+        let bodies = StubURLProtocol.recordedBodies
+        let json = try JSONSerialization.jsonObject(with: bodies[0]) as? [String: Any]
+        let segs = json?["seg"] as? [[String: Any]]
+        let pixels = segs?.first?["i"] as? [Int]
+        XCTAssertEqual(pixels?.count, 75)
+        // LED 0 (on): green
+        XCTAssertEqual(Array(pixels![0..<3]), [0, 255, 0])
+        // LED 1 (off): black
+        XCTAssertEqual(Array(pixels![3..<6]), [0, 0, 0])
+        // LED 12 (on): green
+        XCTAssertEqual(Array(pixels![36..<39]), [0, 255, 0])
     }
 
     // MARK: - 5xx → failure bubbles up for sendOnce
@@ -122,8 +153,9 @@ final class WLEDClientTests: XCTestCase {
     func test_sendOnce_onServerError_throws() async {
         StubURLProtocol.setHandler { _ in .init(status: 500, body: Data()) }
         let client = WLEDClient(session: session)
+        let entry = LayoutEntry(color: RGB(r: 1, g: 2, b: 3))
         do {
-            try await client.sendOnce(RGB(r: 1, g: 2, b: 3), wled: wled)
+            try await client.sendOnce(entry, wled: wled)
             XCTFail("expected throw")
         } catch let err as WLEDClient.ClientError {
             XCTAssertEqual(err, .badResponse(status: 500))
@@ -134,18 +166,37 @@ final class WLEDClientTests: XCTestCase {
 
     // MARK: - Debounce
 
-    func test_setColor_debouncesIdenticalColour() async throws {
+    func test_setEntry_debouncesIdenticalEntry() async throws {
         StubURLProtocol.setHandler { _ in .init(status: 200, body: Data()) }
         let client = WLEDClient(session: session)
 
-        let color = RGB(r: 10, g: 20, b: 30)
-        await client.setColor(color, wled: wled)
-        // Give the internal task time to drain.
+        let entry = LayoutEntry(color: RGB(r: 10, g: 20, b: 30))
+        await client.setEntry(entry, wled: wled)
         try await Task.sleep(nanoseconds: 100_000_000)
-        await client.setColor(color, wled: wled)
+        await client.setEntry(entry, wled: wled)
         try await Task.sleep(nanoseconds: 100_000_000)
 
         XCTAssertEqual(StubURLProtocol.recordedBodies.count, 1,
                        "second identical send should have been debounced")
+    }
+
+    // MARK: - Different pattern triggers re-send
+
+    func test_setEntry_differentPattern_sendsAgain() async throws {
+        StubURLProtocol.setHandler { _ in .init(status: 200, body: Data()) }
+        let client = WLEDClient(session: session)
+
+        let entry1 = LayoutEntry(color: RGB(r: 10, g: 20, b: 30), pattern: .solid)
+        await client.setEntry(entry1, wled: wled)
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        var pattern2 = Pattern.solid
+        pattern2[0, 0] = false
+        let entry2 = LayoutEntry(color: RGB(r: 10, g: 20, b: 30), pattern: pattern2)
+        await client.setEntry(entry2, wled: wled)
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        XCTAssertEqual(StubURLProtocol.recordedBodies.count, 2,
+                       "different pattern should trigger a new send")
     }
 }
