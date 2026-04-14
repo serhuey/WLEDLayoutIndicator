@@ -1,175 +1,175 @@
 # WLED Layout Indicator
 
-A macOS menu-bar app that watches the active keyboard layout and sets the colour of a [WLED](https://kno.wled.ge/) device on the local network in real time. Tested with **M5Stack Atom Matrix** (5×5 RGB LED matrix), but works with any WLED-powered device.
+A macOS menu-bar app that watches the active keyboard layout and drives a [WLED](https://kno.wled.ge/) LED matrix in real time. Tested with **M5Stack Atom Matrix** (5×5 RGB LED matrix).
 
-Switch between English and Russian — the indicator instantly changes from blue to red. At a glance, from across the room, you know which layout is active.
+Switch between English and Russian — the indicator instantly changes from blue to red (or any shape and colour you configure).
 
 ## Features
 
 - **Real-time layout tracking** via Carbon Text Input Sources API — event-driven, zero polling, zero CPU at idle
+- **Per-layout colour + 5×5 pattern** — each layout has its own colour and pixel bitmap; configure both in Settings
+- **Matrix rotation** — rotate the output 0°/90°/180°/270° to match how the device is mounted, without touching stored patterns
 - **Automatic setup on first launch:**
   - Detects all installed keyboard layouts and assigns preset colours
   - Discovers WLED devices via mDNS/Bonjour (filters by hostname containing "wled" + "key")
 - **Preset colours** for common layouts (all configurable):
   - English (ABC / US / British / Dvorak / Colemak) → blue
   - Russian / Ukrainian / Belarusian → red
-  - German → yellow
-  - French → cyan
-  - Spanish → orange
+  - German → yellow · French → cyan · Spanish → orange
   - Unknown layouts → grey (fallback)
 - **Real-time brightness slider** — adjusts WLED brightness as you drag
 - **Fast transitions** — 100 ms colour fade (smooth but snappy)
-- **Menu-bar only** — no Dock icon, no main window, just a tinted icon showing current colour
-- **"Re-detect layouts & WLED device"** button — one-click reset to re-scan everything
+- **Menu-bar only** — no Dock icon, just a tinted grid icon showing current colour
+- **"Re-detect layouts & WLED device"** — one-click reset to re-scan everything
 - **Launch at login** via `SMAppService`
 - **Resilient networking** — retry with exponential backoff (100 ms → 300 ms → 1 s), request coalescing, 2 s timeout
-- **Sleep / screensaver dimming** — dims WLED to near-zero brightness on sleep or screensaver, restores on wake
-- **Wake-from-sleep re-sync** — re-sends current colour when the Mac wakes up
+- **Sleep / screensaver dimming** — dims WLED to brightness 2 on sleep/screensaver, restores on wake
 - **Floating Settings window** — always appears on top (required for agent apps without Dock presence)
 
 ## Requirements
 
 - macOS 13 Ventura or newer
-- Xcode 15+ (developed and tested with Xcode 26.4 / Swift 6.3)
-- Any ESP32 device running [WLED](https://kno.wled.ge/) firmware, reachable on your LAN by IP or mDNS (`.local`)
+- Xcode 15+ (developed with Xcode 26.4 / Swift 6.3)
+- Any ESP32 device running [WLED](https://kno.wled.ge/) firmware, reachable on your LAN by IP or `.local` mDNS name
 - Tested with M5Stack Atom Matrix (5×5 = 25 SK6812 LEDs)
 
 ## Getting started
 
-### 1. Clone the repo
+### 1. Clone & open
 
 ```bash
 git clone https://github.com/serhuey/WLEDLayoutIndicator.git
 cd WLEDLayoutIndicator
-```
-
-### 2. Create the Xcode project
-
-The `.xcodeproj` is already in the repo (committed by Xcode). Open it:
-
-```bash
 open WLEDLayoutIndicator.xcodeproj
 ```
 
-### 3. Configure the build target
-
-In Xcode, select the **WLEDLayoutIndicator** target:
+### 2. Build target settings
 
 | Setting | Where | Value |
 |---|---|---|
 | Minimum Deployments | General | macOS **13.0** |
 | Application is agent (UIElement) | Info | **YES** |
 | App Sandbox | Signing & Capabilities | **ON** |
-| Outgoing Connections (Client) | Signing & Capabilities → App Sandbox → Network | **ON** |
+| Outgoing Connections (Client) | App Sandbox → Network | **ON** |
 
-### 4. Build & Run
+### 3. Build & Run
 
-**Cmd+R**. The app icon appears in the menu bar (a small coloured grid). Nothing in the Dock.
+**⌘R**. The app icon appears in the menu bar. Nothing in the Dock.
 
-On first launch the app will:
-1. Scan your installed keyboard layouts and create a colour mapping
-2. Search the local network for a WLED device (mDNS name must contain both "wled" and "key")
-3. Start sending colour commands on every layout switch
+On first launch the app:
+1. Scans installed keyboard layouts and creates a colour + pattern mapping
+2. Searches the local network for a WLED device (mDNS name must contain "wled" and "key")
+3. Starts sending commands on every layout switch
 
-If auto-discovery doesn't find your device, open **Settings** (click the menu-bar icon → Settings) and enter the host manually (IP address or `device-name.local`).
+If auto-discovery doesn't find your device, open **Settings → WLED device** and enter the host manually.
+
+### 4. WLED device setup tips
+
+- Set **Segment id** in Settings to match your WLED segment (check `GET /json/state` → `seg[].id`).
+- If colours seem ignored but brightness changes, the segment likely has a non-default **palette** — the app forces `pal: 0` on every request, so one layout switch will reset it.
+- For a 5×5 2D matrix, configure the matrix in WLED and leave `start`/`stop` alone — the app does not send those fields.
 
 ### 5. Run tests
 
-**Cmd+U** in Xcode. Tests cover:
-- `ColorMapperTests` — mapping, fallback, case sensitivity
-- `SettingsStoreTests` — first-launch auto-detect, round-trip persistence, no-op update
-- `WLEDClientTests` — JSON payload shape, HTTP 5xx handling, debounce
+**⌘U** in Xcode. Tests cover:
+- `ColorMapperTests` — mapping, fallback, pattern preservation, case sensitivity
+- `SettingsStoreTests` — first-launch auto-detect, round-trip persistence, v1 config migration
+- `WLEDClientTests` — JSON payload shape (nested `i` array), partial pattern, HTTP 5xx, debounce, pattern-change re-send
 
 ## How it works
 
 ```
-┌─────────────────┐     sourceID      ┌──────────────────┐     POST /json/state
-│  LayoutMonitor  │ ────────────────▶ │  AppCoordinator  │ ──────────────────────▶  WLED device
-│                 │                   │                  │
-│ Carbon TIS +    │                   │ ColorMapper:     │     ┌──────────────┐
-│ DistributedNotif│                   │ sourceID → RGB   │     │  WLEDClient  │
-│ + wake listener │                   │                  │────▶│  (actor)     │
-└─────────────────┘                   │ publishes:       │     │  retry +     │
-                                      │ • currentSourceID│     │  debounce +  │
-                                      │ • currentColor   │     │  coalesce    │
-                                      │ • LinkStatus     │     └──────────────┘
-                                      └────────┬─────────┘
-                                               │ @EnvironmentObject
-                              ┌────────────────┼────────────────┐
-                              ▼                                 ▼
-                     ┌─────────────────┐              ┌──────────────────┐
-                     │  MenuBarExtra   │              │  SettingsView    │
-                     │  (status icon)  │              │  (SwiftUI form)  │
-                     └─────────────────┘              └──────────────────┘
+┌─────────────────┐   sourceID    ┌──────────────────────────────┐   POST /json/state
+│  LayoutMonitor  │ ────────────▶ │       AppCoordinator         │ ──────────────────▶  WLED
+│                 │               │                              │
+│ Carbon TIS +    │               │  ColorMapper:                │   ┌──────────────┐
+│ DistributedNotif│               │  sourceID → LayoutEntry      │──▶│  WLEDClient  │
+│ + wake listener │               │  (color + pattern)           │   │  (actor)     │
+└─────────────────┘               │                              │   │  retry +     │
+                                  │  rotation applied here       │   │  debounce +  │
+                                  │  (pattern only, not stored)  │   │  coalesce    │
+                                  └──────────────┬───────────────┘   └──────────────┘
+                                                 │ @EnvironmentObject
+                                  ┌──────────────┴───────────────┐
+                                  ▼                              ▼
+                         ┌─────────────────┐           ┌──────────────────┐
+                         │  MenuBarExtra   │           │  SettingsView    │
+                         │  (status icon)  │           │  (SwiftUI form)  │
+                         └─────────────────┘           └──────────────────┘
 ```
 
 ### Data flow
 
-1. **LayoutMonitor** subscribes to `AppleSelectedInputSourcesChangedNotification` (distributed notification) and emits the current `kTISPropertyInputSourceID` as a `String` via `AsyncStream`.
-2. **AppCoordinator** consumes the stream, runs the ID through **ColorMapper** (a pure function: `(sourceID, Config) → RGB`), and hands the result to **WLEDClient**.
-3. **WLEDClient** (a Swift actor) sends `POST http://<host>/json/state` with the colour, brightness, and a 100 ms transition. It deduplicates by `(RGB, brightness)`, retries on failure, and coalesces rapid updates so only the latest state is delivered.
-4. **AppCoordinator** also subscribes to config changes (via Combine `$config` publisher with 150 ms debounce) — so dragging the brightness slider or changing a colour in Settings immediately updates the device.
+1. **LayoutMonitor** subscribes to `AppleSelectedInputSourcesChangedNotification` and emits the current `kTISPropertyInputSourceID` via `AsyncStream<String>`.
+2. **AppCoordinator** runs the ID through **ColorMapper** (`(sourceID, Config) → LayoutEntry`), applies `matrixRotation` to the pattern, and hands it to **WLEDClient**.
+3. **WLEDClient** (Swift actor) sends `POST /json/state` with per-pixel `"i"` array, `pal: 0`, `fx: 0`, and a 100 ms transition. Deduplicates by `(LayoutEntry, brightness)`, retries on failure, coalesces rapid updates.
+4. **AppCoordinator** also subscribes to `$config` (Combine, 150 ms debounce) — dragging the brightness slider or editing a pattern immediately updates the device.
 
-### Configuration
-
-Stored as JSON in the app's sandboxed container:
-
-```
-~/Library/Containers/<bundle-id>/Data/Library/Application Support/WLEDLayoutIndicator/config.json
-```
-
-Structure:
-
-```json
-{
-  "wled": {
-    "host": "wled-key-indicator.local",
-    "brightness": 128,
-    "segmentId": 0,
-    "ledCount": 25
-  },
-  "mapping": {
-    "com.apple.keylayout.ABC": { "r": 0, "g": 120, "b": 255 },
-    "com.apple.keylayout.RussianWin": { "r": 255, "g": 40, "b": 40 }
-  },
-  "defaultColor": { "r": 80, "g": 80, "b": 80 },
-  "launchAtLogin": false
-}
-```
-
-### WLED JSON API
-
-The app sends a single POST per layout change:
+### WLED JSON API payload
 
 ```json
 {
   "on": true,
   "bri": 128,
   "transition": 1,
-  "seg": [{ "id": 0, "col": [[0, 120, 255]], "fx": 0 }]
+  "seg": [{
+    "id": 0,
+    "on": true,
+    "col": [[0, 120, 255]],
+    "i": [[0,120,255],[0,120,255],...,[0,0,0],[0,0,0]],
+    "fx": 0,
+    "pal": 0
+  }]
 }
 ```
 
-- `transition: 1` = 100 ms fade (WLED measures in 100 ms units)
-- `seg` only sends `id`, `col`, and `fx` — does NOT override `start`/`stop`, respecting the device's own 2D matrix configuration
-- No `start`/`stop` means the app works with any WLED segment setup (1D strip, 2D matrix, etc.)
+- `"i"` — nested `[[R,G,B]]` array (one entry per LED). Pixels where the pattern is off receive `[0,0,0]`.
+- `"col"` — base colour (fallback for firmware that ignores `"i"`).
+- `"pal": 0` — forces default palette so our colours are not overridden.
+- No `start`/`stop` — respects the device's own 2D matrix segment setup.
+
+### Configuration file
+
+Stored in the app's sandboxed container:
+
+```
+~/Library/Containers/<bundle-id>/Data/Library/Application Support/WLEDLayoutIndicator/config.json
+```
+
+```json
+{
+  "wled": { "host": "wled-key-indicator.local", "brightness": 128, "segmentId": 0, "ledCount": 25 },
+  "mapping": {
+    "com.apple.keylayout.ABC": {
+      "color": { "r": 0, "g": 120, "b": 255 },
+      "pattern": { "pixels": [true, true, ..., true] }
+    }
+  },
+  "defaultEntry": { "color": { "r": 80, "g": 80, "b": 80 }, "pattern": { "pixels": [...] } },
+  "matrixRotation": 0,
+  "launchAtLogin": false
+}
+```
+
+Old v1 configs (with `mapping: {String: RGB}` and `defaultColor`) are automatically migrated on first launch.
 
 ## Project structure
 
 ```
 WLEDLayoutIndicator/
 ├── WLEDLayoutIndicatorApp.swift     # @main, NSApplicationDelegateAdaptor, MenuBarExtra
-├── AppCoordinator.swift             # Wires monitor → mapper → client, auto-discovery, sleep/wake dimming
+├── AppCoordinator.swift             # monitor → mapper → rotation → client, sleep/wake dimming
 ├── Core/
-│   ├── Models.swift                 # Config, RGB, LinkStatus (nonisolated value types)
-│   ├── SettingsStore.swift          # JSON persistence + first-launch auto-detect
+│   ├── Models.swift                 # Config, RGB, Pattern, LayoutEntry, LinkStatus
+│   ├── SettingsStore.swift          # JSON persistence, first-launch auto-detect, v1 migration
 │   ├── LayoutMonitor.swift          # Carbon TIS + DistributedNotificationCenter
-│   ├── ColorMapper.swift            # Pure (sourceID, Config) → RGB mapping
-│   ├── WLEDClient.swift             # Actor: URLSession + retry + debounce + coalesce
-│   └── WLEDDiscovery.swift          # mDNS/Bonjour device discovery via NWBrowser
+│   ├── ColorMapper.swift            # Pure (sourceID, Config) → LayoutEntry
+│   ├── WLEDClient.swift             # Actor: URLSession, per-pixel "i" API, retry/debounce
+│   └── WLEDDiscovery.swift          # mDNS/Bonjour discovery via NWBrowser
 ├── UI/
-│   ├── StatusBarIcon.swift          # Menu-bar label (tinted grid glyph or warning)
-│   └── SettingsView.swift           # SwiftUI Form: host, brightness, mappings, reset
+│   ├── StatusBarIcon.swift          # Menu-bar label (tinted grid or warning triangle)
+│   ├── SettingsView.swift           # SwiftUI Form: host, brightness, rotation, patterns
+│   └── PatternEditor.swift          # 5×5 clickable grid + fill/clear presets
 └── Assets.xcassets/
 
 WLEDLayoutIndicatorTests/
@@ -178,30 +178,29 @@ WLEDLayoutIndicatorTests/
 └── WLEDClientTests.swift
 ```
 
-## Concurrency notes (Swift 6.3)
+## Concurrency (Swift 6.3)
 
-The project compiles cleanly under Swift 6's strict concurrency checking (Xcode 26.4):
+Compiles cleanly under strict concurrency (Xcode 26.4):
 
-- **Domain types** (`RGB`, `Config`, `LinkStatus`) are marked `nonisolated struct/enum` to opt out of the module's default `@MainActor` isolation (SE-0466), since they need to be accessed from both the main actor and the `WLEDClient` actor.
-- **`WLEDClient`** is a Swift `actor` — all mutable state (`pending`, `lastSentKey`, `runner`) is actor-isolated.
-- **`LayoutMonitor`**, **`SettingsStore`**, **`AppCoordinator`** are `@MainActor` — they own UI-observable state and interact with AppKit/SwiftUI.
-- **`WLEDDiscovery`** uses `NWBrowser` callbacks on a background queue, then hops to `@MainActor` via `Task { @MainActor in }` with pre-bound `let s = self` to satisfy Swift 6's strict `Sendable` requirements.
+- **Domain types** (`RGB`, `Pattern`, `LayoutEntry`, `Config`, `LinkStatus`) are `nonisolated struct/enum` — usable from any actor without `await`.
+- **`WLEDClient`** is a Swift `actor` — all mutable send state is actor-isolated.
+- **`AppCoordinator`**, **`SettingsStore`**, **`LayoutMonitor`** are `@MainActor`.
+- **`WLEDDiscovery`** bridges `NWBrowser` callbacks to `@MainActor` via `Task { @MainActor in }` with pre-captured `self`.
 
-## Building the standalone .app
+## Building a standalone .app
 
 ```bash
-cd ~/Projects/WLEDLayoutIndicator
 xcodebuild -scheme WLEDLayoutIndicator -configuration Release -derivedDataPath build
 cp -R build/Build/Products/Release/WLEDLayoutIndicator.app /Applications/
 ```
 
-First launch: right-click → **Open** → confirm (unsigned app). After that it opens normally. Enable **Launch at login** in Settings to start automatically.
+First launch: right-click → **Open** → confirm. Enable **Launch at login** in Settings.
 
 ## Open items
 
-- **Heartbeat** — periodic re-send to recover from WLED reboots (not yet implemented; device holds state well in practice)
-- **Per-app layout tracking** — detect which app is focused and track its layout independently (macOS allows per-app input sources)
-- **Developer ID signing / notarization** — currently unsigned (right-click → Open to launch)
+- **Heartbeat** — periodic re-send to recover if WLED reboots and loses state
+- **Per-app layout tracking** — macOS allows per-app input sources; could track them independently
+- **Developer ID signing / notarization** — currently unsigned
 
 ## License
 

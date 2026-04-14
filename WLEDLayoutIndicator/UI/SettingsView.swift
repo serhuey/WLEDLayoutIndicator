@@ -40,7 +40,7 @@ struct SettingsView: View {
 
                 HStack {
                     Text("Brightness")
-                    Slider(value: brightnessBinding, in: 0...255, step: 1)
+                    Slider(value: brightnessBinding, in: 0...255)
                     Text("\(settings.config.wled.brightness)").monospacedDigit().frame(width: 36)
                 }
 
