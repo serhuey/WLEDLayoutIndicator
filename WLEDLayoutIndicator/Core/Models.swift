@@ -47,6 +47,27 @@ public nonisolated struct Pattern: Codable, Equatable, Hashable, Sendable {
         get { pixels[row * 5 + col] }
         set { pixels[row * 5 + col] = newValue }
     }
+
+    /// Returns a new pattern rotated clockwise by `degrees` (0 / 90 / 180 / 270).
+    public func rotated(by degrees: Int) -> Pattern {
+        let steps = ((degrees % 360 + 360) % 360) / 90
+        var result = self
+        for _ in 0..<steps {
+            result = result.rotated90CW()
+        }
+        return result
+    }
+
+    /// Single 90° clockwise rotation: new[row][col] = old[4-col][row].
+    private func rotated90CW() -> Pattern {
+        var result = Pattern.blank
+        for row in 0..<5 {
+            for col in 0..<5 {
+                result[row, col] = self[4 - col, row]
+            }
+        }
+        return result
+    }
 }
 
 // MARK: - LayoutEntry
@@ -94,12 +115,17 @@ public nonisolated struct Config: Codable, Equatable, Sendable {
     /// Launch app at login (persisted only — application of this setting
     /// is the responsibility of `SMAppService` at runtime).
     public var launchAtLogin: Bool
+    /// Physical rotation of the matrix in degrees (0 / 90 / 180 / 270).
+    /// Applied to every pattern before sending — does not alter stored patterns.
+    public var matrixRotation: Int
 
-    public init(wled: WLED, mapping: [String: LayoutEntry], defaultEntry: LayoutEntry, launchAtLogin: Bool) {
+    public init(wled: WLED, mapping: [String: LayoutEntry], defaultEntry: LayoutEntry,
+                launchAtLogin: Bool, matrixRotation: Int = 0) {
         self.wled = wled
         self.mapping = mapping
         self.defaultEntry = defaultEntry
         self.launchAtLogin = launchAtLogin
+        self.matrixRotation = matrixRotation
     }
 
     /// Defaults used on first launch (or when the config file is missing/corrupt).
@@ -109,7 +135,8 @@ public nonisolated struct Config: Codable, Equatable, Sendable {
         wled: .init(host: "", brightness: 128, segmentId: 0, ledCount: 25),
         mapping: [:],
         defaultEntry: LayoutEntry(color: RGB(r: 80, g: 80, b: 80)),
-        launchAtLogin: false
+        launchAtLogin: false,
+        matrixRotation: 0
     )
 
     /// Builds a mapping from an array of installed source IDs by matching

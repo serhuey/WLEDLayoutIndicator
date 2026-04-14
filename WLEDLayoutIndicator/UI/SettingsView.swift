@@ -57,6 +57,19 @@ struct SettingsView: View {
                 }
             }
 
+            Section("Matrix orientation") {
+                Picker("Rotation", selection: rotationBinding) {
+                    Text("0°").tag(0)
+                    Text("90°").tag(90)
+                    Text("180°").tag(180)
+                    Text("270°").tag(270)
+                }
+                .pickerStyle(.segmented)
+                Text("Rotates the pattern on the physical device. Does not change stored patterns.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("Layout → Color & Pattern") {
                 ForEach(sortedSourceIDs, id: \.self) { id in
                     VStack(alignment: .leading, spacing: 6) {
@@ -211,6 +224,13 @@ struct SettingsView: View {
             set: { v in settings.update {
                 $0.mapping[id, default: $0.defaultEntry].pattern = v
             }}
+        )
+    }
+
+    private var rotationBinding: Binding<Int> {
+        Binding(
+            get: { settings.config.matrixRotation },
+            set: { v in settings.update { $0.matrixRotation = v } }
         )
     }
 

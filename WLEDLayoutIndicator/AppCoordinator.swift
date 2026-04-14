@@ -103,7 +103,7 @@ public final class AppCoordinator: ObservableObject {
         let wled = settings.config.wled
         let entry = ColorMapper.entry(for: currentSourceID, config: settings.config)
         do {
-            try await client.sendOnce(entry, wled: wled)
+            try await client.sendOnce(rotated(entry), wled: wled)
             status = .ok(lastSent: entry.color)
             return .success(())
         } catch {
@@ -182,7 +182,14 @@ public final class AppCoordinator: ObservableObject {
             wled.brightness = Self.dimBrightness
         }
         let entry = ColorMapper.entry(for: currentSourceID, config: settings.config)
-        await client.setEntry(entry, wled: wled)
+        await client.setEntry(rotated(entry), wled: wled)
+    }
+
+    /// Applies the configured matrix rotation to a layout entry's pattern.
+    private func rotated(_ entry: LayoutEntry) -> LayoutEntry {
+        let degrees = settings.config.matrixRotation
+        guard degrees != 0 else { return entry }
+        return LayoutEntry(color: entry.color, pattern: entry.pattern.rotated(by: degrees))
     }
 
     // MARK: - Layout
@@ -198,7 +205,7 @@ public final class AppCoordinator: ObservableObject {
         if isDimmed {
             wled.brightness = Self.dimBrightness
         }
-        await client.setEntry(entry, wled: wled)
+        await client.setEntry(rotated(entry), wled: wled)
         status = .ok(lastSent: entry.color)
     }
 }
