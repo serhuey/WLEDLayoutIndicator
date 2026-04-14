@@ -21,14 +21,23 @@ public actor WLEDClient {
         /// Transition time in 100 ms units. 1 = 100 ms, 7 = 700 ms (WLED default).
         let transition: Int
         let seg: [Segment]
-        /// Uses `"i"` (individual LED) array for per-pixel colour control.
+        /// Sends per-segment `on: true`, a base `col` (so the segment is not blank
+        /// if the firmware ignores `i`), and `"i"` (individual LED array) for
+        /// per-pixel control. `fx: 0` (Solid) is required for `i` to persist.
         /// Does NOT send `start`/`stop` — those are already configured in WLED
         /// itself (e.g. 2D matrix 5×5).
         struct Segment: Encodable {
             let id: Int
-            /// Per-pixel colour data: flat array [R,G,B, R,G,B, …] for each LED.
-            let i: [Int]
+            let on: Bool
+            let col: [[Int]]
+            /// Per-pixel colour data: array of [R,G,B] triples, one per LED.
+            /// A flat array is ambiguous — WLED reads `[i, R, G, B]` pairs
+            /// when it sees a flat list, so only the nested form is safe.
+            let i: [[Int]]
             let fx: Int
+            /// Palette id. Must be 0 (default), otherwise WLED colours the
+            /// segment from the palette and ignores our `col` / `i`.
+            let pal: Int
         }
     }
 
@@ -131,15 +140,16 @@ public actor WLEDClient {
             throw ClientError.transport("invalid host: \(wled.host)")
         }
 
-        // Build per-pixel "i" array: for each LED, output [R,G,B] if the
-        // pattern pixel is on, or [0,0,0] if off.
+        // Build per-pixel "i" array: for each LED, emit [R,G,B] if the
+        // pattern pixel is on, or [0,0,0] if off. Nested form is required —
+        // WLED parses a flat list as [index, R, G, B] pairs.
         let rgb = entry.color.jsonArray
         let off = [0, 0, 0]
-        var pixels: [Int] = []
-        pixels.reserveCapacity(wled.ledCount * 3)
+        var pixels: [[Int]] = []
+        pixels.reserveCapacity(wled.ledCount)
         for idx in 0..<wled.ledCount {
             let on = idx < entry.pattern.pixels.count ? entry.pattern.pixels[idx] : false
-            pixels.append(contentsOf: on ? rgb : off)
+            pixels.append(on ? rgb : off)
         }
 
         let body = Body(
@@ -147,7 +157,14 @@ public actor WLEDClient {
             bri: max(0, min(255, wled.brightness)),
             transition: 1,
             seg: [
-                .init(id: wled.segmentId, i: pixels, fx: 0)
+                .init(
+                    id: wled.segmentId,
+                    on: true,
+                    col: [rgb],
+                    i: pixels,
+                    fx: 0,
+                    pal: 0
+                )
             ]
         )
 
@@ -155,7 +172,9 @@ public actor WLEDClient {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 2
-        request.httpBody = try JSONEncoder().encode(body)
+        let bodyData = try JSONEncoder().encode(body)
+        request.httpBody = bodyData
+        logger.debug("POST \(url.absoluteString, privacy: .public) (\(bodyData.count) bytes, \(pixels.count) pixels)")
 
         do {
             let (_, response) = try await session.data(for: request)

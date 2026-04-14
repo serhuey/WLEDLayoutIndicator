@@ -64,7 +64,33 @@ public final class SettingsStore: ObservableObject {
 
     static func loadFromDisk(url: URL) -> Config? {
         guard let data = try? Data(contentsOf: url) else { return nil }
-        return try? JSONDecoder().decode(Config.self, from: data)
+        // Try current format first.
+        if let config = try? JSONDecoder().decode(Config.self, from: data) {
+            return config
+        }
+        // Fall back to pre-pattern format (v1: mapping was [String: RGB],
+        // field was "defaultColor" instead of "defaultEntry").
+        return migrateV1(data: data)
+    }
+
+    /// Decodes the v1 config format and converts it to the current schema.
+    private static func migrateV1(data: Data) -> Config? {
+        struct V1: Decodable {
+            var wled: Config.WLED
+            var mapping: [String: RGB]
+            var defaultColor: RGB
+            var launchAtLogin: Bool
+        }
+        guard let old = try? JSONDecoder().decode(V1.self, from: data) else {
+            return nil
+        }
+        let newMapping = old.mapping.mapValues { LayoutEntry(color: $0) }
+        return Config(
+            wled: old.wled,
+            mapping: newMapping,
+            defaultEntry: LayoutEntry(color: old.defaultColor),
+            launchAtLogin: old.launchAtLogin
+        )
     }
 
     static func writeToDisk(url: URL, config: Config) throws {

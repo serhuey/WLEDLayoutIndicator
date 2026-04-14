@@ -112,13 +112,14 @@ final class WLEDClientTests: XCTestCase {
         XCTAssertEqual(json?["bri"] as? Int, 128)
         let segs = json?["seg"] as? [[String: Any]]
         XCTAssertEqual(segs?.first?["id"] as? Int, 0)
-        // "i" should be a flat array of 75 ints (25 LEDs × 3 channels)
-        let pixels = segs?.first?["i"] as? [Int]
-        XCTAssertEqual(pixels?.count, 75)
-        // First LED should be red
-        XCTAssertEqual(Array(pixels![0..<3]), [255, 0, 0])
-        // Last LED should also be red (solid pattern)
-        XCTAssertEqual(Array(pixels![72..<75]), [255, 0, 0])
+        XCTAssertEqual(segs?.first?["on"] as? Bool, true)
+        XCTAssertEqual(segs?.first?["fx"] as? Int, 0)
+        XCTAssertEqual(segs?.first?["col"] as? [[Int]], [[255, 0, 0]])
+        // "i" should be an array of 25 [R,G,B] triples
+        let pixels = segs?.first?["i"] as? [[Int]]
+        XCTAssertEqual(pixels?.count, 25)
+        XCTAssertEqual(pixels?.first, [255, 0, 0])
+        XCTAssertEqual(pixels?.last, [255, 0, 0])
     }
 
     // MARK: - Pattern with some pixels off
@@ -138,14 +139,11 @@ final class WLEDClientTests: XCTestCase {
         let bodies = StubURLProtocol.recordedBodies
         let json = try JSONSerialization.jsonObject(with: bodies[0]) as? [String: Any]
         let segs = json?["seg"] as? [[String: Any]]
-        let pixels = segs?.first?["i"] as? [Int]
-        XCTAssertEqual(pixels?.count, 75)
-        // LED 0 (on): green
-        XCTAssertEqual(Array(pixels![0..<3]), [0, 255, 0])
-        // LED 1 (off): black
-        XCTAssertEqual(Array(pixels![3..<6]), [0, 0, 0])
-        // LED 12 (on): green
-        XCTAssertEqual(Array(pixels![36..<39]), [0, 255, 0])
+        let pixels = segs?.first?["i"] as? [[Int]]
+        XCTAssertEqual(pixels?.count, 25)
+        XCTAssertEqual(pixels?[0], [0, 255, 0])   // LED 0: on, green
+        XCTAssertEqual(pixels?[1], [0, 0, 0])     // LED 1: off, black
+        XCTAssertEqual(pixels?[12], [0, 255, 0])  // LED 12 (row 2 col 2): on, green
     }
 
     // MARK: - 5xx → failure bubbles up for sendOnce
