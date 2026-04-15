@@ -73,14 +73,13 @@ struct SettingsView: View {
             Section("Layout → Color & Pattern") {
                 ForEach(sortedSourceIDs, id: \.self) { id in
                     VStack(alignment: .leading, spacing: 12) {
-                        // Source ID + colour picker (no trash here)
                         HStack {
                             Text(id).font(.system(.body, design: .monospaced))
                             Spacer()
                             ColorPicker("", selection: colorBinding(for: id), supportsOpacity: false)
                                 .labelsHidden()
+                                .frame(width: 76)
                         }
-                        // Pattern grid + right column: Fill/Clear + trash at bottom
                         HStack(alignment: .bottom) {
                             PatternEditor(
                                 pattern: patternBinding(for: id),
@@ -98,14 +97,13 @@ struct SettingsView: View {
                                 .frame(maxWidth: .infinity)
                                 Spacer(minLength: 0)
                                 Button { removeMapping(id) } label: {
-                                    Image(systemName: "trash")
+                                    Label("Delete", systemImage: "trash")
                                 }
-                                .buttonStyle(.borderless)
-                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity)
                             }
                             .buttonStyle(.bordered)
                             .controlSize(.small)
-                            .frame(width: 60)
+                            .frame(width: 76)
                         }
                     }
                 }
@@ -122,6 +120,7 @@ struct SettingsView: View {
                         Spacer()
                         ColorPicker("", selection: defaultColorBinding, supportsOpacity: false)
                             .labelsHidden()
+                            .frame(width: 76)
                     }
                     HStack(alignment: .bottom) {
                         PatternEditor(

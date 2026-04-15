@@ -53,7 +53,7 @@ struct PatternEditor: View {
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
-            .frame(width: 60)
+            .frame(width: 76)
         }
     }
 }
