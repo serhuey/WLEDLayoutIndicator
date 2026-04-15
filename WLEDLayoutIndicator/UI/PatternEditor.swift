@@ -48,11 +48,12 @@ struct PatternEditor: View {
 
         var body: some View {
             VStack(spacing: 4) {
-                Button("Fill") { pattern = .solid }
-                Button("Clear") { pattern = .blank }
+                Button("Fill")  { pattern = .solid  }.frame(maxWidth: .infinity)
+                Button("Clear") { pattern = .blank }.frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
+            .frame(width: 60)
         }
     }
 }

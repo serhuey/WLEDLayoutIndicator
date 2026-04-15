@@ -72,26 +72,40 @@ struct SettingsView: View {
 
             Section("Layout → Color & Pattern") {
                 ForEach(sortedSourceIDs, id: \.self) { id in
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        // Source ID + colour picker (no trash here)
                         HStack {
                             Text(id).font(.system(.body, design: .monospaced))
                             Spacer()
                             ColorPicker("", selection: colorBinding(for: id), supportsOpacity: false)
                                 .labelsHidden()
-                            Button {
-                                removeMapping(id)
-                            } label: {
-                                Image(systemName: "trash")
-                            }
-                            .buttonStyle(.borderless)
                         }
-                        HStack(alignment: .top) {
+                        // Pattern grid + right column: Fill/Clear + trash at bottom
+                        HStack(alignment: .bottom) {
                             PatternEditor(
                                 pattern: patternBinding(for: id),
                                 color: (settings.config.mapping[id]?.color ?? settings.config.defaultEntry.color).swiftUI
                             )
                             Spacer()
-                            PatternEditor.Presets(pattern: patternBinding(for: id))
+                            VStack(spacing: 4) {
+                                Button("Fill") {
+                                    settings.update { $0.mapping[id, default: $0.defaultEntry].pattern = .solid }
+                                }
+                                .frame(maxWidth: .infinity)
+                                Button("Clear") {
+                                    settings.update { $0.mapping[id, default: $0.defaultEntry].pattern = .blank }
+                                }
+                                .frame(maxWidth: .infinity)
+                                Spacer(minLength: 0)
+                                Button { removeMapping(id) } label: {
+                                    Image(systemName: "trash")
+                                }
+                                .buttonStyle(.borderless)
+                                .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .frame(width: 60)
                         }
                     }
                 }
@@ -102,14 +116,14 @@ struct SettingsView: View {
                         .disabled(newSourceID.isEmpty)
                 }
 
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 12) {
                     HStack {
                         Text("Default (fallback)")
                         Spacer()
                         ColorPicker("", selection: defaultColorBinding, supportsOpacity: false)
                             .labelsHidden()
                     }
-                    HStack(alignment: .top) {
+                    HStack(alignment: .bottom) {
                         PatternEditor(
                             pattern: defaultPatternBinding,
                             color: settings.config.defaultEntry.color.swiftUI
