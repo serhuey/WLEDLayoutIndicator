@@ -42,17 +42,17 @@ struct PatternEditor: View {
 
     // MARK: - Presets
 
-    /// Buttons to quickly fill or clear the entire pattern.
+    /// Fill / Clear buttons stacked vertically, aligned to the trailing edge.
     struct Presets: View {
         @Binding var pattern: Pattern
 
         var body: some View {
-            HStack(spacing: 8) {
-                Button("Fill all") { pattern = .solid }
-                Button("Clear all") { pattern = .blank }
+            VStack(spacing: 4) {
+                Button("Fill") { pattern = .solid }
+                Button("Clear") { pattern = .blank }
             }
-            .buttonStyle(.borderless)
-            .font(.caption)
+            .buttonStyle(.bordered)
+            .controlSize(.small)
         }
     }
 }

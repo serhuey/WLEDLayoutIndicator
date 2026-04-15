@@ -85,11 +85,12 @@ struct SettingsView: View {
                             }
                             .buttonStyle(.borderless)
                         }
-                        HStack {
+                        HStack(alignment: .top) {
                             PatternEditor(
                                 pattern: patternBinding(for: id),
                                 color: (settings.config.mapping[id]?.color ?? settings.config.defaultEntry.color).swiftUI
                             )
+                            Spacer()
                             PatternEditor.Presets(pattern: patternBinding(for: id))
                         }
                     }
@@ -108,11 +109,12 @@ struct SettingsView: View {
                         ColorPicker("", selection: defaultColorBinding, supportsOpacity: false)
                             .labelsHidden()
                     }
-                    HStack {
+                    HStack(alignment: .top) {
                         PatternEditor(
                             pattern: defaultPatternBinding,
                             color: settings.config.defaultEntry.color.swiftUI
                         )
+                        Spacer()
                         PatternEditor.Presets(pattern: defaultPatternBinding)
                     }
                 }
