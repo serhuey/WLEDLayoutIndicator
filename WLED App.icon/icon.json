@@ -2,7 +2,9 @@
   "color-space-for-untagged-svg-colors" : "display-p3",
   "fill-specializations" : [
     {
-      "value" : "system-dark"
+      "value" : {
+        "solid" : "display-p3:0.11900,0.27723,0.51945,1.00000"
+      }
     },
     {
       "appearance" : "dark",
@@ -13,19 +15,20 @@
     {
       "layers" : [
         {
-          "blend-mode" : "normal",
-          "fill" : "none",
-          "hidden" : false,
-          "image-name" : "Layer LED 2.svg",
-          "name" : "Layer LED 2",
-          "opacity" : 0.75,
-          "position" : {
-            "scale" : 2.5,
-            "translation-in-points" : [
-              0,
-              0
-            ]
-          }
+          "image-name" : "Layer LED.svg",
+          "name" : "Layer LED",
+          "position-specializations" : [
+            {
+              "idiom" : "macOS",
+              "value" : {
+                "scale" : 2.5,
+                "translation-in-points" : [
+                  0,
+                  0
+                ]
+              }
+            }
+          ]
         }
       ],
       "opacity" : 0.75,
@@ -41,17 +44,20 @@
     {
       "layers" : [
         {
-          "fill" : "none",
-          "image-name" : "Layer Back.svg",
-          "name" : "Layer Back",
-          "opacity" : 0.2,
-          "position" : {
-            "scale" : 3,
-            "translation-in-points" : [
-              0,
-              0
-            ]
-          }
+          "image-name" : "Layer Back 2.svg",
+          "name" : "Layer Back 2",
+          "position-specializations" : [
+            {
+              "idiom" : "macOS",
+              "value" : {
+                "scale" : 3,
+                "translation-in-points" : [
+                  0,
+                  0
+                ]
+              }
+            }
+          ]
         }
       ],
       "shadow" : {

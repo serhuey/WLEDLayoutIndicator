@@ -69,70 +69,65 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-
-            Section("Layout → Color & Pattern") {
-                ForEach(sortedSourceIDs, id: \.self) { id in
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack {
+            
+            Section("Layout → Color & Pattern")
+            {
+                ForEach(sortedSourceIDs, id: \.self)
+                {
+                    id in
+                    VStack(alignment: .leading, spacing: 12)
+                    {
+                        HStack(alignment: .top)
+                        {
                             Text(id).font(.system(.body, design: .monospaced))
                             Spacer()
-                            ColorPicker("", selection: colorBinding(for: id), supportsOpacity: false)
-                                .labelsHidden()
-                                .frame(width: 76)
-                        }
-                        HStack(alignment: .bottom) {
-                            PatternEditor(
-                                pattern: patternBinding(for: id),
-                                color: (settings.config.mapping[id]?.color ?? settings.config.defaultEntry.color).swiftUI
-                            )
-                            Spacer()
-                            VStack(spacing: 4) {
-                                Button("Fill") {
-                                    settings.update { $0.mapping[id, default: $0.defaultEntry].pattern = .solid }
-                                }
-                                .frame(maxWidth: .infinity)
-                                Button("Clear") {
-                                    settings.update { $0.mapping[id, default: $0.defaultEntry].pattern = .blank }
-                                }
-                                .frame(maxWidth: .infinity)
-                                Spacer(minLength: 0)
-                                Button { removeMapping(id) } label: {
-                                    Label("Delete", systemImage: "trash")
-                                }
-                                .frame(maxWidth: .infinity)
+                            Button(role: .destructive) {
+                                removeMapping(id)
+                            } label: {
+                                Label("", systemImage: "trash")
                             }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                            .frame(width: 76)
+                            .buttonStyle(.borderless)
                         }
-                    }
-                }
-                HStack {
-                    TextField("com.apple.keylayout.…", text: $newSourceID)
-                        .textFieldStyle(.roundedBorder)
-                    Button("Add") { addMapping() }
-                        .disabled(newSourceID.isEmpty)
-                }
+                        HStack(alignment: .top)
+                        {
+                            HStack(alignment: .top)
+                            {
+                                PatternEditor(
+                                    pattern: patternBinding(for: id),
+                                    color: (settings.config.mapping[id]?.color ?? settings.config.defaultEntry.color).swiftUI
+                                )
+                               
+                                Section {
+                                    VStack(alignment: .leading, spacing: 12) {
+                                        colorPickerButton(for: id)
 
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Text("Default (fallback)")
-                        Spacer()
-                        ColorPicker("", selection: defaultColorBinding, supportsOpacity: false)
-                            .labelsHidden()
-                            .frame(width: 76)
-                    }
-                    HStack(alignment: .bottom) {
-                        PatternEditor(
-                            pattern: defaultPatternBinding,
-                            color: settings.config.defaultEntry.color.swiftUI
-                        )
-                        Spacer()
-                        PatternEditor.Presets(pattern: defaultPatternBinding)
+                                        Spacer(minLength: 0)
+
+                                        actionButton("Fill") {
+                                            settings.update {
+                                                $0.mapping[id, default: $0.defaultEntry].pattern = .solid
+                                            }
+                                        }
+
+                                        actionButton("Clear") {
+                                            settings.update {
+                                                $0.mapping[id, default: $0.defaultEntry].pattern = .blank
+                                            }
+                                        }
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                    .padding(10)
+                                }
+                                .controlSize(.small)
+                                .frame(width: 86)
+                                
+                            }
+                        }
                     }
                 }
             }
-
+            
+  
             Section("Reset") {
                 Button("Re-detect layouts & WLED device") {
                     resetAutoConfig()
@@ -157,6 +152,60 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .padding(20)
     }
+
+
+    @ViewBuilder
+    private func actionButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.bordered)
+    }
+
+    private func colorPickerButton(for id: String) -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(colorBinding(for: id).wrappedValue)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .stroke(.quaternary, lineWidth: 1)
+                }
+
+            Text("Pick")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(contrastTextColor(for: colorBinding(for: id).wrappedValue))
+                .allowsHitTesting(false)
+
+            ColorPicker("", selection: colorBinding(for: id), supportsOpacity: false)
+                .labelsHidden()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .opacity(0.075)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 22)
+        .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+    }
+
+    private func contrastTextColor(for color: Color) -> Color {
+        #if canImport(AppKit)
+        let nsColor = NSColor(color)
+
+        guard let rgb = nsColor.usingColorSpace(.deviceRGB) else {
+            return .primary
+        }
+
+        let luminance =
+            0.2126 * rgb.redComponent +
+            0.7152 * rgb.greenComponent +
+            0.0722 * rgb.blueComponent
+
+        return luminance > 0.6 ? .black.opacity(0.75) : .white.opacity(0.92)
+        #else
+        return .primary
+        #endif
+    }
+
 
     // MARK: - Computed
 
@@ -335,3 +384,5 @@ extension Color {
         return RGB(r: r, g: g, b: b)
     }
 }
+
+
