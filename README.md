@@ -23,6 +23,7 @@ Switch between English and Russian — the indicator instantly changes from blue
 - **"Re-detect layouts & WLED device"** — one-click reset to re-scan everything
 - **Launch at login** via `SMAppService`
 - **Resilient networking** — retry with exponential backoff (100 ms → 300 ms → 1 s), request coalescing, 2 s timeout
+- **Per-app layout memory (opt-in)** — remembers which keyboard layout you last used in each foreground app (by bundle ID) and automatically restores it whenever you focus that app again. First-time apps are not changed; macOS's native *Automatically switch to a document's input source* can stay on (last writer wins, usually no friction) or be turned off if you prefer our scope only.
 - **Sleep / screensaver dimming** — dims WLED to brightness 2 on sleep/screensaver, restores on wake
 - **Floating Settings window** — always appears on top (required for agent apps without Dock presence)
 
@@ -165,7 +166,8 @@ WLEDLayoutIndicator/
 │   ├── LayoutMonitor.swift          # Carbon TIS + DistributedNotificationCenter
 │   ├── ColorMapper.swift            # Pure (sourceID, Config) → LayoutEntry
 │   ├── WLEDClient.swift             # Actor: URLSession, per-pixel "i" API, retry/debounce
-│   └── WLEDDiscovery.swift          # mDNS/Bonjour discovery via NWBrowser
+│   ├── WLEDDiscovery.swift          # mDNS/Bonjour discovery via NWBrowser
+│   └── AppFocusMonitor.swift        # NSWorkspace front-app changes (per-app memory)
 ├── UI/
 │   ├── StatusBarIcon.swift          # Menu-bar label (5×5 pattern preview, dark bg)
 │   ├── SettingsView.swift           # SwiftUI Form: host, brightness, rotation, patterns

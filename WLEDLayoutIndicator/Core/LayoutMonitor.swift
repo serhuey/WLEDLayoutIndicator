@@ -101,6 +101,36 @@ public final class LayoutMonitor {
         return cfString as String
     }
 
+    /// Programmatically selects the keyboard input source with the given ID.
+    /// Used by per-app layout memory to restore the saved layout on focus.
+    /// Returns `true` on success, `false` if the source isn't found among
+    /// installed keyboard sources or `TISSelectInputSource` returns non-zero.
+    @discardableResult
+    static func selectInputSource(id: String) -> Bool {
+        let logger = Logger(subsystem: "com.wledlayout.indicator", category: "layout")
+        guard let allSources = TISCreateInputSourceList(nil, false)?
+                .takeRetainedValue() as? [TISInputSource] else {
+            logger.warning("selectInputSource: TISCreateInputSourceList returned nil")
+            return false
+        }
+        for source in allSources {
+            guard let idPtr = TISGetInputSourceProperty(source, kTISPropertyInputSourceID) else {
+                continue
+            }
+            let candidate = Unmanaged<CFString>.fromOpaque(idPtr).takeUnretainedValue() as String
+            guard candidate == id else { continue }
+            let status = TISSelectInputSource(source)
+            if status == noErr {
+                return true
+            } else {
+                logger.warning("TISSelectInputSource(\(id, privacy: .public)) -> \(status)")
+                return false
+            }
+        }
+        logger.warning("selectInputSource: no enabled source matches id \(id, privacy: .public)")
+        return false
+    }
+
     /// Returns all *enabled, selectable* keyboard layouts installed in the
     /// system, as an array of source IDs (e.g. `["com.apple.keylayout.US",
     /// "com.apple.keylayout.Russian"]`).

@@ -44,7 +44,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.coordinator = AppCoordinator(
             settings: store,
             monitor: LayoutMonitor(),
-            client: WLEDClient()
+            client: WLEDClient(),
+            focusMonitor: AppFocusMonitor()
         )
         super.init()
     }

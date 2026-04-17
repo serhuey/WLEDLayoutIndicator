@@ -138,6 +138,22 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
+            Section("Per-app layout memory") {
+                Toggle("Remember and restore layout per app", isOn: autoSwitchBinding)
+                Text("When enabled, the app records which keyboard layout is active in each foreground app and switches back to it whenever you focus that app again. First-time apps are not changed — current layout is just remembered.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                HStack {
+                    Text("Remembered: \(settings.config.appLayoutMemory.count) app\(settings.config.appLayoutMemory.count == 1 ? "" : "s")")
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Forget all") {
+                        settings.update { $0.appLayoutMemory = [:] }
+                    }
+                    .disabled(settings.config.appLayoutMemory.isEmpty)
+                }
+            }
+
             Section("System") {
                 Toggle("Launch at login", isOn: launchAtLoginBinding)
 
@@ -305,6 +321,13 @@ struct SettingsView: View {
                 settings.update { $0.launchAtLogin = v }
                 applyLaunchAtLogin(v)
             }
+        )
+    }
+
+    private var autoSwitchBinding: Binding<Bool> {
+        Binding(
+            get: { settings.config.autoSwitchOnAppFocus },
+            set: { v in settings.update { $0.autoSwitchOnAppFocus = v } }
         )
     }
 

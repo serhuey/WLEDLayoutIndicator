@@ -118,14 +118,42 @@ public nonisolated struct Config: Codable, Equatable, Sendable {
     /// Physical rotation of the matrix in degrees (0 / 90 / 180 / 270).
     /// Applied to every pattern before sending — does not alter stored patterns.
     public var matrixRotation: Int
+    /// When `true`, AppCoordinator records the active layout per app's
+    /// bundle ID and restores it when focus returns.
+    public var autoSwitchOnAppFocus: Bool
+    /// `bundleID -> sourceID` memory of the last active layout per app.
+    /// Populated only when `autoSwitchOnAppFocus` is enabled.
+    public var appLayoutMemory: [String: String]
 
     public init(wled: WLED, mapping: [String: LayoutEntry], defaultEntry: LayoutEntry,
-                launchAtLogin: Bool, matrixRotation: Int = 0) {
+                launchAtLogin: Bool, matrixRotation: Int = 0,
+                autoSwitchOnAppFocus: Bool = false,
+                appLayoutMemory: [String: String] = [:]) {
         self.wled = wled
         self.mapping = mapping
         self.defaultEntry = defaultEntry
         self.launchAtLogin = launchAtLogin
         self.matrixRotation = matrixRotation
+        self.autoSwitchOnAppFocus = autoSwitchOnAppFocus
+        self.appLayoutMemory = appLayoutMemory
+    }
+
+    /// Custom decoder so older configs (without the per-app fields) round-trip
+    /// to defaults instead of failing the whole decode.
+    private enum CodingKeys: String, CodingKey {
+        case wled, mapping, defaultEntry, launchAtLogin, matrixRotation
+        case autoSwitchOnAppFocus, appLayoutMemory
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.wled = try c.decode(WLED.self, forKey: .wled)
+        self.mapping = try c.decode([String: LayoutEntry].self, forKey: .mapping)
+        self.defaultEntry = try c.decode(LayoutEntry.self, forKey: .defaultEntry)
+        self.launchAtLogin = try c.decode(Bool.self, forKey: .launchAtLogin)
+        self.matrixRotation = try c.decodeIfPresent(Int.self, forKey: .matrixRotation) ?? 0
+        self.autoSwitchOnAppFocus = try c.decodeIfPresent(Bool.self, forKey: .autoSwitchOnAppFocus) ?? false
+        self.appLayoutMemory = try c.decodeIfPresent([String: String].self, forKey: .appLayoutMemory) ?? [:]
     }
 
     /// Defaults used on first launch (or when the config file is missing/corrupt).
@@ -136,7 +164,9 @@ public nonisolated struct Config: Codable, Equatable, Sendable {
         mapping: [:],
         defaultEntry: LayoutEntry(color: RGB(r: 80, g: 80, b: 80)),
         launchAtLogin: false,
-        matrixRotation: 0
+        matrixRotation: 0,
+        autoSwitchOnAppFocus: false,
+        appLayoutMemory: [:]
     )
 
     /// Builds a mapping from an array of installed source IDs by matching
