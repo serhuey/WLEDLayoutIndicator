@@ -18,7 +18,10 @@ struct StatusBarIcon: View {
         }
     }
 
-    /// 5 columns × 3 rows of small dots — visually echoes the Atom Matrix.
+    /// 5 × 3 dot grid drawn via Canvas — fixed 23 × 13 pt frame.
+    /// Canvas with an explicit frame is the only reliable way to draw
+    /// custom-coloured content in a MenuBarExtra label; VStack/HStack
+    /// with ForEach collapses to zero size in that context.
     private var dotGrid: some View {
         let c = coordinator.currentColor
         let color = Color(
@@ -26,16 +29,20 @@ struct StatusBarIcon: View {
             green: Double(c.g) / 255.0,
             blue:  Double(c.b) / 255.0
         )
-        return VStack(spacing: 2) {
-            ForEach(0..<3, id: \.self) { _ in
-                HStack(spacing: 2) {
-                    ForEach(0..<5, id: \.self) { _ in
-                        RoundedRectangle(cornerRadius: 0.5)
-                            .fill(color)
-                            .frame(width: 3, height: 3)
-                    }
+        let dot: CGFloat = 3
+        let gap: CGFloat = 2
+        return Canvas { ctx, _ in
+            for row in 0..<3 {
+                for col in 0..<5 {
+                    let x = CGFloat(col) * (dot + gap)
+                    let y = CGFloat(row) * (dot + gap)
+                    let rect = CGRect(x: x, y: y, width: dot, height: dot)
+                    ctx.fill(Path(roundedRect: rect, cornerRadius: 0.5),
+                             with: .color(color))
                 }
             }
         }
+        .frame(width: CGFloat(5) * dot + CGFloat(4) * gap,   // 23
+               height: CGFloat(3) * dot + CGFloat(2) * gap)  // 13
     }
 }
