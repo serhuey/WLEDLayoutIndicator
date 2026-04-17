@@ -12,8 +12,7 @@ struct WLEDLayoutIndicatorApp: App {
                 .environmentObject(delegate.coordinator)
                 .environmentObject(delegate.settings)
         } label: {
-            StatusBarIcon()
-                .environmentObject(delegate.coordinator)
+            StatusBarIcon(coordinator: delegate.coordinator)
         }
         .menuBarExtraStyle(.menu)
 
