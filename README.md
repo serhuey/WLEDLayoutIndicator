@@ -19,7 +19,7 @@ Switch between English and Russian — the indicator instantly changes from blue
   - Unknown layouts → grey (fallback)
 - **Real-time brightness slider** — adjusts WLED brightness as you drag
 - **Fast transitions** — 100 ms colour fade (smooth but snappy)
-- **Menu-bar only** — no Dock icon, just a tinted 5×3 dot grid icon showing current colour (rendered as non-template `NSImage` to bypass macOS menu bar template rendering)
+- **Menu-bar only** — no Dock icon, just a 5×5 dot grid that mirrors the WLED pattern (original, un-rotated) in the current layout colour on a dark rounded background; rendered as non-template `NSImage` to bypass macOS menu bar template rendering
 - **"Re-detect layouts & WLED device"** — one-click reset to re-scan everything
 - **Launch at login** via `SMAppService`
 - **Resilient networking** — retry with exponential backoff (100 ms → 300 ms → 1 s), request coalescing, 2 s timeout
@@ -167,7 +167,7 @@ WLEDLayoutIndicator/
 │   ├── WLEDClient.swift             # Actor: URLSession, per-pixel "i" API, retry/debounce
 │   └── WLEDDiscovery.swift          # mDNS/Bonjour discovery via NWBrowser
 ├── UI/
-│   ├── StatusBarIcon.swift          # Menu-bar label (coloured NSImage grid, non-template)
+│   ├── StatusBarIcon.swift          # Menu-bar label (5×5 pattern preview, dark bg)
 │   ├── SettingsView.swift           # SwiftUI Form: host, brightness, rotation, patterns
 │   └── PatternEditor.swift          # 5×5 clickable grid + fill/clear presets
 └── Assets.xcassets/

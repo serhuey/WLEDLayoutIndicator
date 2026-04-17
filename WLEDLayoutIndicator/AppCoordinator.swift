@@ -11,6 +11,7 @@ public final class AppCoordinator: ObservableObject {
 
     @Published public private(set) var currentSourceID: String = "—"
     @Published public private(set) var currentColor: RGB = .init(r: 0, g: 0, b: 0)
+    @Published public private(set) var currentPattern: Pattern = .solid
     @Published public private(set) var status: LinkStatus = .idle
 
     public let settings: SettingsStore
@@ -198,14 +199,16 @@ public final class AppCoordinator: ObservableObject {
         currentSourceID = sourceID
         let config = settings.config
         let entry = ColorMapper.entry(for: sourceID, config: config)
+        let rotatedEntry = rotated(entry)
         currentColor = entry.color
+        currentPattern = entry.pattern
         logger.info("layout=\(sourceID, privacy: .public) -> rgb=\(entry.color.r),\(entry.color.g),\(entry.color.b)")
 
         var wled = config.wled
         if isDimmed {
             wled.brightness = Self.dimBrightness
         }
-        await client.setEntry(rotated(entry), wled: wled)
+        await client.setEntry(rotatedEntry, wled: wled)
         status = .ok(lastSent: entry.color)
     }
 }

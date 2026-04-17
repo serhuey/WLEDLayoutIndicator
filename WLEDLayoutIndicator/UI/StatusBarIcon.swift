@@ -1,8 +1,10 @@
 import SwiftUI
 import AppKit
 
-/// Menu-bar label: a 5×3 grid of dots tinted with the current layout colour,
-/// or a warning triangle when the WLED link has failed.
+/// Menu-bar label: a 5×5 grid mirroring the original (un-rotated) WLED
+/// pattern — "on" pixels tinted with the current layout colour, drawn
+/// over a dark rounded background so the icon stays legible on any menu
+/// bar appearance. Shows a warning triangle when the link has failed.
 ///
 /// MenuBarExtra with `.menu` style renders the label as a template image,
 /// stripping all colour. Rendering to `NSImage` with `isTemplate = false`
@@ -19,7 +21,8 @@ struct StatusBarIcon: View {
         }
     }
 
-    /// 5 × 3 dot grid rendered to a non-template NSImage.
+    /// 5 × 5 pattern-masked grid on a dark rounded background.
+    /// Padding 1 pt + dot 2 pt + gap 1 pt → 16 × 16 pt icon.
     private var dotGridImage: NSImage {
         let c = coordinator.currentColor
         let color = NSColor(
@@ -28,20 +31,26 @@ struct StatusBarIcon: View {
             blue: CGFloat(c.b) / 255.0,
             alpha: 1.0
         )
-        let dot: CGFloat = 3
-        let gap: CGFloat = 2
-        let w = CGFloat(5) * dot + CGFloat(4) * gap   // 23
-        let h = CGFloat(3) * dot + CGFloat(2) * gap   // 13
+        let pattern = coordinator.currentPattern
+        let dot: CGFloat = 2
+        let gap: CGFloat = 1
+        let pad: CGFloat = 1
+        let grid = CGFloat(5) * dot + CGFloat(4) * gap   // 14
+        let side = grid + 2 * pad                         // 16
 
-        let image = NSImage(size: NSSize(width: w, height: h), flipped: true) { _ in
-            for row in 0..<3 {
+        let image = NSImage(size: NSSize(width: side, height: side), flipped: true) { _ in
+            let bgRect = NSRect(x: 0, y: 0, width: side, height: side)
+            NSColor.black.withAlphaComponent(0.85).setFill()
+            NSBezierPath(roundedRect: bgRect, xRadius: 3, yRadius: 3).fill()
+
+            color.setFill()
+            for row in 0..<5 {
                 for col in 0..<5 {
-                    let x = CGFloat(col) * (dot + gap)
-                    let y = CGFloat(row) * (dot + gap)
+                    guard pattern[row, col] else { continue }
+                    let x = pad + CGFloat(col) * (dot + gap)
+                    let y = pad + CGFloat(row) * (dot + gap)
                     let rect = NSRect(x: x, y: y, width: dot, height: dot)
-                    let path = NSBezierPath(roundedRect: rect, xRadius: 0.5, yRadius: 0.5)
-                    color.setFill()
-                    path.fill()
+                    NSBezierPath(roundedRect: rect, xRadius: 0.3, yRadius: 0.3).fill()
                 }
             }
             return true
