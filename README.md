@@ -34,6 +34,79 @@ Switch between English and Russian — the indicator instantly changes from blue
 - Any ESP32 device running [WLED](https://kno.wled.ge/) firmware, reachable on your LAN by IP or `.local` mDNS name
 - Tested with M5Stack Atom Matrix (5×5 = 25 SK6812 LEDs)
 
+## Preparing the M5Stack Atom Matrix
+
+The app needs a WLED-flashed ESP32 device on your LAN. The **M5Stack Atom Matrix** is a compact ESP32-PICO board with 25 × SK6812 LEDs wired to **GPIO 27**, powered over USB-C — ideal for this use case. Everything below is doable from a Mac.
+
+### 1. Flash WLED
+
+Easiest path: **WLED Web Installer** — [install.wled.me](https://install.wled.me/). Requires **Chrome or Edge** on macOS (Safari has no WebSerial support).
+
+1. Plug the Atom Matrix into your Mac via USB-C.
+2. Open [install.wled.me](https://install.wled.me/) in Chrome/Edge.
+3. Click **Install** → select the latest **ESP32** build (the Atom Matrix's ESP32-PICO is covered by the standard ESP32 binary — do *not* pick ESP32-S2/S3/C3 variants).
+4. Pick the serial port (`/dev/cu.usbserial-*` or `/dev/cu.usbmodem*`). If none appears, install the **CH9102** (newer Atoms) or **CP210x** USB-UART driver from [m5stack.com/pages/download](https://docs.m5stack.com/en/download).
+5. Wait for flash + verify (~30 s). The device reboots into a **WLED-AP** Wi-Fi hotspot.
+
+**Alternative — CLI:**
+
+```bash
+brew install esptool
+# download WLED_x.y.z_ESP32.bin from https://github.com/Aircoookie/WLED/releases
+esptool.py --port /dev/cu.usbserial-XXXX erase_flash
+esptool.py --port /dev/cu.usbserial-XXXX write_flash 0x0 WLED_x.y.z_ESP32.bin
+```
+
+### 2. Join your Wi-Fi
+
+1. On the Mac, connect to the **WLED-AP** network (default password `wled1234`).
+2. A captive portal opens at `http://4.3.2.1` (open manually if it doesn't).
+3. **WiFi Setup** → enter your home SSID + password → save. The device reboots and joins your LAN.
+
+### 3. Rename the mDNS hostname
+
+The app's auto-discovery matches devices whose mDNS name contains **both `wled` and `key`** — so unrelated WLED installs on the LAN don't get claimed. Rename the Atom to match:
+
+1. Find the device — default hostname is `wled-XXXXXX.local` (last 6 of the MAC), or check your router.
+2. Open it in a browser → **Config → WiFi Setup → mDNS Address** → set to `wled-key-indicator` (anything containing both substrings works).
+3. Save & reboot. It's now reachable at `http://wled-key-indicator.local`.
+
+### 4. Configure the 5×5 matrix
+
+**Config → LED Preferences:**
+
+| Field | Value |
+|---|---|
+| LED Type | WS281x (SK6812 is protocol-compatible) |
+| Color Order | GRB |
+| Length | 25 |
+| GPIO (data pin) | **27** |
+| Max current | 1000 mA (conservative — 25 LEDs at full white can peak ~1.5 A, above Atom's USB-C budget) |
+
+**Config → 2D Configuration** (WLED 0.14+):
+
+- **Strip or Matrix:** Matrix
+- **Width × Height:** 5 × 5
+- **Serpentine / orientation:** match the physical wiring. If the preview in the WLED UI looks mirrored or rotated vs. the device, toggle serpentine here — or leave it and fix orientation from the app side via Settings → **Matrix rotation** (0° / 90° / 180° / 270°).
+
+**Config → Sync Interfaces:** leave defaults. The app talks plain HTTP JSON — no E1.31 / Art-Net / MQTT needed.
+
+### 5. Sanity check
+
+```bash
+curl -s http://wled-key-indicator.local/json/state | jq '.seg[] | {id, start, stop, len, pal, fx}'
+```
+
+Expect one segment with `start: 0, stop: 25, len: 25`. If `pal` is non-zero, the app resets it to `0` on the next layout switch (it always sends `pal: 0`).
+
+### 6. macOS utilities for WLED (optional)
+
+- **Web UI** — `http://wled-key-indicator.local` is fully featured and works in any browser on the same LAN.
+- **[WLED Native for macOS](https://github.com/Moustachauve/wled-native)** — unofficial Mac app for device management, presets, and OTA firmware updates across multiple devices.
+- **WLED iOS app** — same-LAN control from the phone.
+
+---
+
 ## Getting started
 
 ### 1. Clone & open
@@ -64,11 +137,11 @@ On first launch the app:
 
 If auto-discovery doesn't find your device, open **Settings → WLED device** and enter the host manually.
 
-### 4. WLED device setup tips
+### 4. Troubleshooting the WLED link
 
 - Set **Segment id** in Settings to match your WLED segment (check `GET /json/state` → `seg[].id`).
 - If colours seem ignored but brightness changes, the segment likely has a non-default **palette** — the app forces `pal: 0` on every request, so one layout switch will reset it.
-- For a 5×5 2D matrix, configure the matrix in WLED and leave `start`/`stop` alone — the app does not send those fields.
+- For a 5×5 2D matrix, configure the matrix in WLED (step 4 above) and leave `start`/`stop` alone — the app does not send those fields.
 
 ### 5. Run tests
 
