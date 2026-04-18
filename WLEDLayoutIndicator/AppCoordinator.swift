@@ -25,7 +25,21 @@ public final class AppCoordinator: ObservableObject {
     private var sleepObservers: [NSObjectProtocol] = []
     /// When true, we override brightness to `dimBrightness` instead of config value.
     private var isDimmed = false
-    private static let dimBrightness = 2
+    private static let dimBrightness = 3
+    /// Bundle IDs that should never participate in per-app layout memory:
+    /// our own app (avoid feedback loops) and system shells that transiently
+    /// steal focus on lock/screensaver/login (no reason to remember "layout
+    /// while screen was locked").
+    private static let excludedBundleIDs: Set<String> = [
+        "com.apple.loginwindow",
+        "com.apple.ScreenSaver.Engine",
+        "com.apple.WindowManager",
+    ]
+
+    private func isExcludedBundle(_ bundleID: String) -> Bool {
+        bundleID == Bundle.main.bundleIdentifier
+            || Self.excludedBundleIDs.contains(bundleID)
+    }
     /// After we assert a layout on focus, ignore layout changes that aren't
     /// what we set — Chrome/Electron/Telegram fight back immediately.
     /// Without this, the app's override would overwrite our memory with its
@@ -51,6 +65,17 @@ public final class AppCoordinator: ObservableObject {
     public func start() {
         monitor.start()
         focusMonitor.start()
+
+        // Clean up any excluded-bundle entries that may have been recorded
+        // before the exclusion list existed (e.g. com.apple.loginwindow
+        // showing up when the screen locked).
+        let stale = settings.config.appLayoutMemory.keys.filter(isExcludedBundle)
+        if !stale.isEmpty {
+            logger.info("Purging \(stale.count) excluded bundle(s) from memory")
+            settings.update { config in
+                for key in stale { config.appLayoutMemory.removeValue(forKey: key) }
+            }
+        }
 
         // Consume layout changes.
         monitorTask = Task { [weak self] in
@@ -161,11 +186,15 @@ public final class AppCoordinator: ObservableObject {
         let ws = NSWorkspace.shared.notificationCenter
         let dc = DistributedNotificationCenter.default()
 
-        // Dim: system sleep or screensaver activation
+        // Dim: system sleep, screensaver activation, or screen lock.
+        // `screenIsLocked` is the most reliable distributed notification and
+        // fires for password-on-sleep / hot-corner lock paths where
+        // `screensaver.didstart` can be silent.
         let dimEvents: [(center: Any, name: NSNotification.Name)] = [
             (ws, NSWorkspace.willSleepNotification),
             (ws, NSWorkspace.screensDidSleepNotification),
             (dc, NSNotification.Name("com.apple.screensaver.didstart")),
+            (dc, NSNotification.Name("com.apple.screenIsLocked")),
         ]
         for event in dimEvents {
             let center = event.center
@@ -182,11 +211,12 @@ public final class AppCoordinator: ObservableObject {
             sleepObservers.append(o)
         }
 
-        // Restore: system wake or screensaver stop
+        // Restore: system wake, screensaver stop, or screen unlock.
         let wakeEvents: [(center: Any, name: NSNotification.Name)] = [
             (ws, NSWorkspace.didWakeNotification),
             (ws, NSWorkspace.screensDidWakeNotification),
             (dc, NSNotification.Name("com.apple.screensaver.didstop")),
+            (dc, NSNotification.Name("com.apple.screenIsUnlocked")),
         ]
         for event in wakeEvents {
             let center = event.center
@@ -225,6 +255,7 @@ public final class AppCoordinator: ObservableObject {
             wled.brightness = Self.dimBrightness
         }
         let entry = ColorMapper.entry(for: currentSourceID, config: settings.config)
+        logger.info("sendCurrentEntry dimmed=\(self.isDimmed) bri=\(wled.brightness)")
         await client.setEntry(rotated(entry), wled: wled)
     }
 
@@ -265,7 +296,7 @@ public final class AppCoordinator: ObservableObject {
         currentBundleID = bundleID
         guard settings.config.autoSwitchOnAppFocus,
               let bundleID,
-              bundleID != Bundle.main.bundleIdentifier else {
+              !isExcludedBundle(bundleID) else {
             return
         }
         guard let saved = settings.config.appLayoutMemory[bundleID],
@@ -305,7 +336,7 @@ public final class AppCoordinator: ObservableObject {
     private func recordLayoutForCurrentApp(sourceID: String) {
         guard settings.config.autoSwitchOnAppFocus,
               let bundleID = currentBundleID,
-              bundleID != Bundle.main.bundleIdentifier else {
+              !isExcludedBundle(bundleID) else {
             return
         }
         // Within the assert window, an incoming layout change that differs

@@ -163,6 +163,14 @@ struct SettingsView: View {
                         .font(.system(.body, design: .monospaced))
                         .foregroundStyle(.secondary)
                 }
+
+                HStack {
+                    Text("Build:")
+                    Text(buildInfo)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
             }
         }
         .formStyle(.grouped)
@@ -227,6 +235,23 @@ struct SettingsView: View {
 
     private var sortedSourceIDs: [String] {
         settings.config.mapping.keys.sorted()
+    }
+
+    /// Version + executable mtime. The bundle version rarely bumps in dev,
+    /// but the mtime is always the last rebuild — reliable "is my fix running".
+    private var buildInfo: String {
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = info?["CFBundleVersion"] as? String ?? "?"
+        var stamp = ""
+        if let exe = Bundle.main.executableURL,
+           let attrs = try? FileManager.default.attributesOfItem(atPath: exe.path),
+           let mtime = attrs[.modificationDate] as? Date {
+            let f = DateFormatter()
+            f.dateFormat = "yyyy-MM-dd HH:mm:ss"
+            stamp = " · \(f.string(from: mtime))"
+        }
+        return "v\(version) (\(build))\(stamp)"
     }
 
     @ViewBuilder

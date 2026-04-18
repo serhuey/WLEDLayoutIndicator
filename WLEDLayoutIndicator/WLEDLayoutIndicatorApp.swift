@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import os
 
 @main
 struct WLEDLayoutIndicatorApp: App {
@@ -56,18 +57,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.start()
 
         // Agent apps (LSUIElement) can't reliably activate to the foreground.
-        // The only reliable fix: set the Settings window to floating level.
-        windowObserver = NotificationCenter.default.addObserver(
-            forName: NSWindow.didBecomeKeyNotification,
-            object: nil,
-            queue: .main
-        ) { notification in
+        // Combine: `.floating` keeps window above other apps, NSApp.activate +
+        // makeKeyAndOrderFront grabs focus. Hook both didBecomeKey AND
+        // didBecomeMain — with SettingsLink the window may become main before
+        // becoming key, and hooking only didBecomeKey misses that case.
+        let log = Logger(subsystem: "com.wledlayout.indicator", category: "window")
+        let hook: (Notification) -> Void = { notification in
             guard let window = notification.object as? NSWindow,
                   window.canBecomeKey else { return }
             MainActor.assumeIsolated {
+                log.info("\(notification.name.rawValue, privacy: .public) on \(window.title, privacy: .public)")
                 window.level = .floating
+                NSApp.activate(ignoringOtherApps: true)
+                window.makeKeyAndOrderFront(nil)
             }
         }
+        let center = NotificationCenter.default
+        windowObserver = center.addObserver(
+            forName: NSWindow.didBecomeKeyNotification,
+            object: nil, queue: .main, using: hook)
+        _ = center.addObserver(
+            forName: NSWindow.didBecomeMainNotification,
+            object: nil, queue: .main, using: hook)
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -84,11 +95,11 @@ struct MenuBarContent: View {
         Text(statusText).foregroundStyle(.secondary)
         Divider()
 
+        // Activate the app BEFORE opening Settings — SettingsLink/openSettings
+        // on its own won't bring an LSUIElement agent app to the foreground,
+        // so the window opens unfocused on first click.
         if #available(macOS 14.0, *) {
-            SettingsLink {
-                Text("Settings…")
-            }
-            .keyboardShortcut(",", modifiers: .command)
+            SettingsMenuButton()
         } else {
             Button("Settings…") {
                 NSApp.activate(ignoringOtherApps: true)
@@ -107,5 +118,17 @@ struct MenuBarContent: View {
         case .ok(let rgb):     return "Status: OK  (\(rgb.r), \(rgb.g), \(rgb.b))"
         case .failed(let msg): return "Status: ⚠︎ \(msg)"
         }
+    }
+}
+
+@available(macOS 14.0, *)
+private struct SettingsMenuButton: View {
+    @Environment(\.openSettings) private var openSettings
+    var body: some View {
+        Button("Settings…") {
+            NSApp.activate(ignoringOtherApps: true)
+            openSettings()
+        }
+        .keyboardShortcut(",", modifiers: .command)
     }
 }
