@@ -54,6 +54,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var windowObserver: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Tell macOS we're not a cache — we have a live menu-bar presence,
+        // persistent WLED connection, and per-app layout memory. Without this,
+        // `cache_delete` / CacheDeleteAppContainerCaches reaps the app when the
+        // system wants container space (observed as silent exit with reason
+        // 0xBADDD15C, maxTerminationResistance: NonInteractive).
+        ProcessInfo.processInfo.disableSuddenTermination()
+        ProcessInfo.processInfo.disableAutomaticTermination("Menu-bar indicator with live WLED connection")
+
         coordinator.start()
 
         // Agent apps (LSUIElement) can't reliably activate to the foreground.
@@ -91,10 +99,6 @@ struct MenuBarContent: View {
     @EnvironmentObject var coordinator: AppCoordinator
 
     var body: some View {
-        Text("Layout: \(coordinator.currentSourceID)")
-        Text(statusText).foregroundStyle(.secondary)
-        Divider()
-
         // Activate the app BEFORE opening Settings — SettingsLink/openSettings
         // on its own won't bring an LSUIElement agent app to the foreground,
         // so the window opens unfocused on first click.
@@ -110,14 +114,6 @@ struct MenuBarContent: View {
 
         Button("Quit") { NSApplication.shared.terminate(nil) }
             .keyboardShortcut("q", modifiers: .command)
-    }
-
-    private var statusText: String {
-        switch coordinator.status {
-        case .idle:            return "Status: idle"
-        case .ok(let rgb):     return "Status: OK  (\(rgb.r), \(rgb.g), \(rgb.b))"
-        case .failed(let msg): return "Status: ⚠︎ \(msg)"
-        }
     }
 }
 

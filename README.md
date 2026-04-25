@@ -27,10 +27,18 @@ Switch between English and Russian — the indicator instantly changes from blue
 - **Sleep / screensaver dimming** — dims WLED to brightness 2 on sleep/screensaver, restores on wake
 - **Floating Settings window** — always appears on top (required for agent apps without Dock presence)
 
+## Download
+
+Latest release: **[WLEDLayoutIndicator-1.0.dmg](https://github.com/serhuey/WLEDLayoutIndicator/releases/download/v1.0/WLEDLayoutIndicator-1.0.dmg)** (Apple Silicon only · ad-hoc signed · ~2 MB)
+
+All releases on [GitHub Releases](https://github.com/serhuey/WLEDLayoutIndicator/releases).
+
+Open the DMG, drag the app into **Applications**. Because the build is ad-hoc signed (no Apple Developer ID), the first launch needs Gatekeeper bypass: **right-click the app → Open → Open** (one-time). Or build from source — see [Getting started](#getting-started).
+
 ## Requirements
 
-- macOS 13 Ventura or newer
-- Xcode 15+ (developed with Xcode 26.4 / Swift 6.3)
+- macOS 13 Ventura or newer · Apple Silicon (the prebuilt DMG is arm64 only; build from source for Intel)
+- Xcode 15+ (developed with Xcode 26.4 / Swift 6.3) — only needed if building from source
 - Any ESP32 device running [WLED](https://kno.wled.ge/) firmware, reachable on your LAN by IP or `.local` mDNS name
 - Tested with M5Stack Atom Matrix (5×5 = 25 SK6812 LEDs)
 
