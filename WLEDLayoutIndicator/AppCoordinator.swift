@@ -48,6 +48,9 @@ public final class AppCoordinator: ObservableObject {
     private var assertedSourceID: String?
     private var assertedUntil: Date?
     private static let assertWindow: TimeInterval = 1.2
+    /// Cancelled and replaced on every wake. Schedules redundant restore
+    /// sends to recover from packets lost while Wi-Fi was reconnecting.
+    private var wakeFollowUpTask: Task<Void, Never>?
     private let logger = Logger(subsystem: "com.wledlayout.indicator", category: "coordinator")
 
     public init(
@@ -155,6 +158,8 @@ public final class AppCoordinator: ObservableObject {
         monitorTask = nil
         focusTask?.cancel()
         focusTask = nil
+        wakeFollowUpTask?.cancel()
+        wakeFollowUpTask = nil
         configObserver = nil
         for o in sleepObservers {
             NSWorkspace.shared.notificationCenter.removeObserver(o)
@@ -242,21 +247,47 @@ public final class AppCoordinator: ObservableObject {
     }
 
     private func handleRestore() {
-        guard isDimmed else { return }
+        // Idempotent: any of the four wake notifications can fire (and some
+        // may not fire at all on a given wake path), so we always run the
+        // restore path rather than gating on `isDimmed`. WLEDClient dedup is
+        // bypassed via `force` so a missed dim send (Wi-Fi down) doesn't
+        // leave us stuck believing the device is already at full brightness.
+        let wasDimmed = isDimmed
         isDimmed = false
-        logger.info("Restoring WLED brightness (wake/screensaver stop)")
-        Task { await sendCurrentEntry() }
+        logger.info("Restoring WLED brightness (wake/screensaver stop, wasDimmed=\(wasDimmed))")
+        Task { await sendCurrentEntry(force: true) }
+
+        // Wi-Fi may take several seconds to reassociate after wake. Schedule
+        // follow-up sends so a dropped first packet doesn't leave the matrix
+        // dim until the next layout change.
+        wakeFollowUpTask?.cancel()
+        wakeFollowUpTask = Task { [weak self] in
+            for delaySeconds in [3, 10] {
+                try? await Task.sleep(for: .seconds(delaySeconds))
+                if Task.isCancelled { return }
+                await self?.sendCurrentEntry(force: true)
+            }
+        }
+
+        // Per-app layout memory: if the same app stayed focused across sleep
+        // (no Cmd-Tab during/after wake), `didActivateApplicationNotification`
+        // never fires and the layout from memory is never re-asserted.
+        // Re-trigger the focus path explicitly with the current bundle.
+        let bundle = currentBundleID
+        Task { await self.handleAppFocus(bundleID: bundle) }
     }
 
     /// Sends the current entry with effective brightness (dimmed or config).
-    private func sendCurrentEntry() async {
+    /// `force` bypasses WLEDClient dedup — use for wake/restore paths where
+    /// the device's actual state may have diverged from `lastSentKey`.
+    private func sendCurrentEntry(force: Bool = false) async {
         var wled = settings.config.wled
         if isDimmed {
             wled.brightness = Self.dimBrightness
         }
         let entry = ColorMapper.entry(for: currentSourceID, config: settings.config)
-        logger.info("sendCurrentEntry dimmed=\(self.isDimmed) bri=\(wled.brightness)")
-        await client.setEntry(rotated(entry), wled: wled)
+        logger.info("sendCurrentEntry dimmed=\(self.isDimmed) bri=\(wled.brightness) force=\(force)")
+        await client.setEntry(rotated(entry), wled: wled, force: force)
     }
 
     /// Applies the configured matrix rotation to a layout entry's pattern.

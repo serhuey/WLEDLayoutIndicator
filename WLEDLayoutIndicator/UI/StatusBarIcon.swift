@@ -43,14 +43,21 @@ struct StatusBarIcon: View {
             NSColor.black.withAlphaComponent(0.85).setFill()
             NSBezierPath(roundedRect: bgRect, xRadius: 3, yRadius: 3).fill()
 
-            color.setFill()
+            // Off-pixels: dim tint of the layout colour so the grid stays
+            // visible even when the pattern is empty (.blank).
+            let offColor = color.withAlphaComponent(0.18)
             for row in 0..<5 {
                 for col in 0..<5 {
-                    guard pattern[row, col] else { continue }
                     let x = pad + CGFloat(col) * (dot + gap)
                     let y = pad + CGFloat(row) * (dot + gap)
                     let rect = NSRect(x: x, y: y, width: dot, height: dot)
-                    NSBezierPath(roundedRect: rect, xRadius: 0.3, yRadius: 0.3).fill()
+                    let path = NSBezierPath(roundedRect: rect, xRadius: 0.3, yRadius: 0.3)
+                    if pattern[row, col] {
+                        color.setFill()
+                    } else {
+                        offColor.setFill()
+                    }
+                    path.fill()
                 }
             }
             return true

@@ -80,9 +80,12 @@ public actor WLEDClient {
 
     /// Queue a layout entry (colour + pattern) to be sent to WLED. Returns immediately.
     /// The actor will coalesce rapid calls and deliver only the latest.
-    public func setEntry(_ entry: LayoutEntry, wled: Config.WLED) {
+    /// Pass `force: true` to bypass dedup — needed for wake-from-sleep restore
+    /// where Wi-Fi may have been down during the dim send, so `lastSentKey`
+    /// reflects state that never actually reached the device.
+    public func setEntry(_ entry: LayoutEntry, wled: Config.WLED, force: Bool = false) {
         let key = DedupKey(entry: entry, brightness: wled.brightness)
-        if key == lastSentKey && runner == nil {
+        if !force && key == lastSentKey && runner == nil {
             return
         }
         pending = (entry, wled)

@@ -88,40 +88,48 @@ struct SettingsView: View {
                             }
                             .buttonStyle(.borderless)
                         }
-                        HStack(alignment: .top)
+                        HStack(alignment: .top, spacing: 24)
                         {
-                            HStack(alignment: .top)
-                            {
-                                PatternEditor(
-                                    pattern: patternBinding(for: id),
-                                    color: (settings.config.mapping[id]?.color ?? settings.config.defaultEntry.color).swiftUI
-                                )
-                               
-                                Section {
-                                    VStack(alignment: .leading, spacing: 12) {
-                                        colorPickerButton(for: id)
+                            PatternEditor(
+                                pattern: patternBinding(for: id),
+                                color: (settings.config.mapping[id]?.color ?? settings.config.defaultEntry.color).swiftUI
+                            )
 
-                                        Spacer(minLength: 0)
+                            HStack(alignment: .top, spacing: 8) {
+                                ColorPaletteControl(color: colorBinding(for: id))
+                                    .frame(width: 110)
 
-                                        actionButton("Fill") {
-                                            settings.update {
-                                                $0.mapping[id, default: $0.defaultEntry].pattern = .solid
-                                            }
+                                VStack(spacing: 4) {
+                                    Button {
+                                        settings.update {
+                                            $0.mapping[id, default: $0.defaultEntry].pattern = .solid
                                         }
-
-                                        actionButton("Clear") {
-                                            settings.update {
-                                                $0.mapping[id, default: $0.defaultEntry].pattern = .blank
-                                            }
-                                        }
+                                    } label: {
+                                        Image(systemName: "paintbrush.fill")
+                                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                                     }
-                                    .frame(maxWidth: .infinity)
-                                    .padding(10)
+                                    .buttonStyle(.borderless)
+                                    .help("Fill all pixels")
+                                    .frame(height: 18)
+
+                                    Button {
+                                        settings.update {
+                                            $0.mapping[id, default: $0.defaultEntry].pattern = .blank
+                                        }
+                                    } label: {
+                                        Image(systemName: "eraser.fill")
+                                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                    }
+                                    .buttonStyle(.borderless)
+                                    .help("Clear all pixels")
+                                    .frame(height: 18)
+
+                                    Spacer(minLength: 0)
                                 }
-                                .controlSize(.small)
-                                .frame(width: 86)
-                                
+                                .frame(width: 24)
                             }
+                            .controlSize(.small)
+                            .padding(.top, 4)
                         }
                     }
                 }
@@ -175,59 +183,6 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .padding(20)
-    }
-
-
-    @ViewBuilder
-    private func actionButton(_ title: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .frame(maxWidth: .infinity)
-        }
-        .buttonStyle(.bordered)
-    }
-
-    private func colorPickerButton(for id: String) -> some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(colorBinding(for: id).wrappedValue)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .stroke(.quaternary, lineWidth: 1)
-                }
-
-            Text("Pick")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(contrastTextColor(for: colorBinding(for: id).wrappedValue))
-                .allowsHitTesting(false)
-
-            ColorPicker("", selection: colorBinding(for: id), supportsOpacity: false)
-                .labelsHidden()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .opacity(0.075)
-        }
-        .frame(maxWidth: .infinity)
-        .frame(height: 22)
-        .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-    }
-
-    private func contrastTextColor(for color: Color) -> Color {
-        #if canImport(AppKit)
-        let nsColor = NSColor(color)
-
-        guard let rgb = nsColor.usingColorSpace(.deviceRGB) else {
-            return .primary
-        }
-
-        let luminance =
-            0.2126 * rgb.redComponent +
-            0.7152 * rgb.greenComponent +
-            0.0722 * rgb.blueComponent
-
-        return luminance > 0.6 ? .black.opacity(0.75) : .white.opacity(0.92)
-        #else
-        return .primary
-        #endif
     }
 
 
@@ -424,11 +379,15 @@ extension RGB {
 extension Color {
     /// Extracts sRGB components. Falls back to black on failure (unreachable
     /// in practice since `ColorPicker` always yields a valid colour).
+    /// Rounds (rather than truncates) so that round-tripping a preset RGB
+    /// → SwiftUI Color → RGB returns the same value: e.g. `200/255*255` is
+    /// `199.9999…` in double precision, which truncates to 199 but rounds
+    /// to 200, preserving preset-equality checks in the colour palette UI.
     var rgb: RGB {
         let ns = NSColor(self).usingColorSpace(.sRGB) ?? NSColor.black
-        let r = UInt8(max(0, min(255, Int(ns.redComponent * 255))))
-        let g = UInt8(max(0, min(255, Int(ns.greenComponent * 255))))
-        let b = UInt8(max(0, min(255, Int(ns.blueComponent * 255))))
+        let r = UInt8(max(0, min(255, Int((ns.redComponent * 255).rounded()))))
+        let g = UInt8(max(0, min(255, Int((ns.greenComponent * 255).rounded()))))
+        let b = UInt8(max(0, min(255, Int((ns.blueComponent * 255).rounded()))))
         return RGB(r: r, g: g, b: b)
     }
 }
