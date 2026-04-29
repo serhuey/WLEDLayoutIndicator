@@ -29,7 +29,7 @@ Switch between English and Russian — the indicator instantly changes from blue
 
 ## Download
 
-Latest release: **[WLEDLayoutIndicator-1.0.dmg](https://github.com/serhuey/WLEDLayoutIndicator/releases/download/v1.0/WLEDLayoutIndicator-1.0.dmg)** (Apple Silicon only · ad-hoc signed · ~2 MB)
+Latest release: **[WLEDLayoutIndicator-1.0.1.dmg](https://github.com/serhuey/WLEDLayoutIndicator/releases/download/v1.0.1/WLEDLayoutIndicator-1.0.1.dmg)** (Apple Silicon only · ad-hoc signed · ~2 MB)
 
 All releases on [GitHub Releases](https://github.com/serhuey/WLEDLayoutIndicator/releases).
 
