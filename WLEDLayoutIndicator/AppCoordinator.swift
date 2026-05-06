@@ -354,10 +354,12 @@ public final class AppCoordinator: ObservableObject {
     // MARK: - Layout
 
     private func handleLayoutChange(sourceID: String) async {
-        currentSourceID = sourceID
         let config = settings.config
+        let oldEntry = rotated(ColorMapper.entry(for: currentSourceID, config: config))
+
+        currentSourceID = sourceID
         let entry = ColorMapper.entry(for: sourceID, config: config)
-        let rotatedEntry = rotated(entry)
+        let newEntry = rotated(entry)
         currentColor = entry.color
         currentPattern = entry.pattern
         logger.info("layout=\(sourceID, privacy: .public) -> rgb=\(entry.color.r),\(entry.color.g),\(entry.color.b)")
@@ -366,10 +368,10 @@ public final class AppCoordinator: ObservableObject {
         recordLayoutForCurrentApp(sourceID: sourceID)
 
         var wled = config.wled
-        if isDimmed {
+        if isDimmed || isVideoDimmed {
             wled.brightness = Self.dimBrightness
         }
-        await client.setEntry(rotatedEntry, wled: wled)
+        await client.transition(from: oldEntry, to: newEntry, wled: wled)
         status = .ok(lastSent: entry.color)
     }
 

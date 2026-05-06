@@ -58,6 +58,7 @@ public actor WLEDClient {
     /// Last successfully-sent state for debouncing.
     private var lastSentKey: DedupKey?
     private var runner: Task<Void, Never>?
+    private var animationTask: Task<Void, Never>?
 
     /// Captures everything that should trigger a re-send when changed.
     private nonisolated struct DedupKey: Equatable {
@@ -85,12 +86,34 @@ public actor WLEDClient {
     /// reflects state that never actually reached the device.
     public func setEntry(_ entry: LayoutEntry, wled: Config.WLED, force: Bool = false) {
         let key = DedupKey(entry: entry, brightness: wled.brightness)
-        if !force && key == lastSentKey && runner == nil {
+        if !force && key == lastSentKey && runner == nil && animationTask == nil {
             return
         }
+        animationTask?.cancel()
+        animationTask = nil
         pending = (entry, wled)
         if runner == nil {
             runner = Task { await self.drain() }
+        }
+    }
+
+    /// Sends an animated scroll transition from `old` to `new`: the old pattern
+    /// slides down and exits while the new pattern enters from the top, one row
+    /// per frame at 50 ms intervals. Cancels any in-flight animation or pending
+    /// plain send. If cancelled mid-run (because a newer transition arrived),
+    /// exits cleanly — the caller is responsible for starting the next one.
+    public func transition(from old: LayoutEntry, to new: LayoutEntry, wled: Config.WLED) {
+        animationTask?.cancel()
+        runner?.cancel()
+        runner = nil
+        pending = nil
+        let key = DedupKey(entry: new, brightness: wled.brightness)
+        animationTask = Task {
+            await self.runAnimation(from: old, to: new, wled: wled)
+            if !Task.isCancelled {
+                self.lastSentKey = key
+            }
+            self.animationTask = nil
         }
     }
 
@@ -138,14 +161,53 @@ public actor WLEDClient {
         throw lastError
     }
 
-    private func performSend(entry: LayoutEntry, wled: Config.WLED) async throws {
-        guard let url = URL(string: "http://\(wled.host)/json/state") else {
-            throw ClientError.transport("invalid host: \(wled.host)")
+    // MARK: - Animation
+
+    private func runAnimation(from old: LayoutEntry, to new: LayoutEntry, wled: Config.WLED) async {
+        let rows = 5, cols = 5
+        let newRGB = new.color.jsonArray
+        let oldRGB = old.color.jsonArray
+
+        // Intermediate frames: fire-and-forget so they flash fast without blocking.
+        for step in [1, 3] {
+            var pixels = [[Int]](repeating: [0, 0, 0], count: wled.ledCount)
+            for row in 0..<rows {
+                for col in 0..<cols {
+                    let idx = row * cols + col
+                    guard idx < pixels.count else { continue }
+                    if row < step {
+                        pixels[idx] = new.pattern[row, col] ? newRGB : [0, 0, 0]
+                    } else {
+                        let srcRow = row - step
+                        pixels[idx] = old.pattern[srcRow, col] ? oldRGB : [0, 0, 0]
+                    }
+                }
+            }
+            let captured = pixels
+            Task.detached { [weak self] in
+                guard let self else { return }
+                try? await self.performSend(pixels: captured, baseColor: newRGB, wled: wled, transition: 0)
+            }
         }
 
-        // Build per-pixel "i" array: for each LED, emit [R,G,B] if the
-        // pattern pixel is on, or [0,0,0] if off. Nested form is required —
-        // WLED parses a flat list as [index, R, G, B] pairs.
+        // Give intermediates time to arrive, then send the final frame awaited
+        // so it is guaranteed to land last and leave a clean final state.
+        try? await Task.sleep(for: .milliseconds(30))
+        guard !Task.isCancelled else { return }
+        var finalPixels = [[Int]](repeating: [0, 0, 0], count: wled.ledCount)
+        for row in 0..<rows {
+            for col in 0..<cols {
+                let idx = row * cols + col
+                guard idx < finalPixels.count else { continue }
+                finalPixels[idx] = new.pattern[row, col] ? newRGB : [0, 0, 0]
+            }
+        }
+        try? await performSend(pixels: finalPixels, baseColor: newRGB, wled: wled, transition: 0)
+    }
+
+    // MARK: - Send
+
+    private func performSend(entry: LayoutEntry, wled: Config.WLED) async throws {
         let rgb = entry.color.jsonArray
         let off = [0, 0, 0]
         var pixels: [[Int]] = []
@@ -154,16 +216,23 @@ public actor WLEDClient {
             let on = idx < entry.pattern.pixels.count ? entry.pattern.pixels[idx] : false
             pixels.append(on ? rgb : off)
         }
+        try await performSend(pixels: pixels, baseColor: rgb, wled: wled, transition: 1)
+    }
+
+    private nonisolated func performSend(pixels: [[Int]], baseColor: [Int], wled: Config.WLED, transition: Int) async throws {
+        guard let url = URL(string: "http://\(wled.host)/json/state") else {
+            throw ClientError.transport("invalid host: \(wled.host)")
+        }
 
         let body = Body(
             on: true,
             bri: max(0, min(255, wled.brightness)),
-            transition: 1,
+            transition: transition,
             seg: [
                 .init(
                     id: wled.segmentId,
                     on: true,
-                    col: [rgb],
+                    col: [baseColor],
                     i: pixels,
                     fx: 0,
                     pal: 0
@@ -177,7 +246,7 @@ public actor WLEDClient {
         request.timeoutInterval = 2
         let bodyData = try JSONEncoder().encode(body)
         request.httpBody = bodyData
-        logger.debug("POST \(url.absoluteString, privacy: .public) (\(bodyData.count) bytes, \(pixels.count) pixels)")
+        logger.debug("POST \(url.absoluteString, privacy: .public) (\(bodyData.count) bytes, \(pixels.count) pixels, transition=\(transition))")
 
         do {
             let (_, response) = try await session.data(for: request)

@@ -31,7 +31,7 @@ Switch between English and Russian — the indicator instantly changes from blue
 
 ## Download
 
-Latest release: **[WLEDLayoutIndicator-1.0.2.dmg](https://github.com/serhuey/WLEDLayoutIndicator/releases/download/v1.0.2/WLEDLayoutIndicator-1.0.2.dmg)** (Apple Silicon only · ad-hoc signed · ~2 MB)
+Latest release: **[WLEDLayoutIndicator-1.0.3.dmg](https://github.com/serhuey/WLEDLayoutIndicator/releases/download/v1.0.3/WLEDLayoutIndicator-1.0.3.dmg)** (Apple Silicon only · ad-hoc signed · ~2 MB)
 
 All releases on [GitHub Releases](https://github.com/serhuey/WLEDLayoutIndicator/releases).
 
@@ -287,6 +287,7 @@ First launch: right-click → **Open** → confirm. Enable **Launch at login** i
 
 ## Open items
 
+- **Other LED configurations** — currently hardcoded for 5×5 (M5Stack Atom Matrix); support for arbitrary N×M matrices and multiple simultaneous WLED devices would broaden compatibility
 - **Developer ID signing / notarization** — currently unsigned
 
 ## License
