@@ -18,13 +18,17 @@ public final class AppCoordinator: ObservableObject {
     public let settings: SettingsStore
     private let monitor: LayoutMonitor
     private let focusMonitor: AppFocusMonitor
+    private let videoMonitor: FullscreenVideoMonitor
     private let client: WLEDClient
     private var monitorTask: Task<Void, Never>?
     private var focusTask: Task<Void, Never>?
+    private var videoTask: Task<Void, Never>?
     private var configObserver: AnyCancellable?
     private var sleepObservers: [NSObjectProtocol] = []
     /// When true, we override brightness to `dimBrightness` instead of config value.
     private var isDimmed = false
+    /// Independently dimmed when fullscreen video is playing (IOKit assertion).
+    private var isVideoDimmed = false
     private static let dimBrightness = 3
     /// Bundle IDs that should never participate in per-app layout memory:
     /// our own app (avoid feedback loops) and system shells that transiently
@@ -57,17 +61,20 @@ public final class AppCoordinator: ObservableObject {
         settings: SettingsStore,
         monitor: LayoutMonitor,
         client: WLEDClient,
-        focusMonitor: AppFocusMonitor
+        focusMonitor: AppFocusMonitor,
+        videoMonitor: FullscreenVideoMonitor
     ) {
         self.settings = settings
         self.monitor = monitor
         self.client = client
         self.focusMonitor = focusMonitor
+        self.videoMonitor = videoMonitor
     }
 
     public func start() {
         monitor.start()
         focusMonitor.start()
+        videoMonitor.start()
 
         // Clean up any excluded-bundle entries that may have been recorded
         // before the exclusion list existed (e.g. com.apple.loginwindow
@@ -93,6 +100,14 @@ public final class AppCoordinator: ObservableObject {
             guard let self else { return }
             for await bundleID in self.focusMonitor.updates {
                 await self.handleAppFocus(bundleID: bundleID)
+            }
+        }
+
+        // Dim / restore on fullscreen video.
+        videoTask = Task { [weak self] in
+            guard let self else { return }
+            for await isPlaying in self.videoMonitor.updates {
+                await self.handleVideoPlayback(isPlaying: isPlaying)
             }
         }
 
@@ -158,6 +173,8 @@ public final class AppCoordinator: ObservableObject {
         monitorTask = nil
         focusTask?.cancel()
         focusTask = nil
+        videoTask?.cancel()
+        videoTask = nil
         wakeFollowUpTask?.cancel()
         wakeFollowUpTask = nil
         configObserver = nil
@@ -168,6 +185,7 @@ public final class AppCoordinator: ObservableObject {
         sleepObservers = []
         monitor.stop()
         focusMonitor.stop()
+        videoMonitor.stop()
     }
 
     /// Fire a manual test from Settings. Bypasses debounce so the user always
@@ -282,12 +300,19 @@ public final class AppCoordinator: ObservableObject {
     /// the device's actual state may have diverged from `lastSentKey`.
     private func sendCurrentEntry(force: Bool = false) async {
         var wled = settings.config.wled
-        if isDimmed {
+        if isDimmed || isVideoDimmed {
             wled.brightness = Self.dimBrightness
         }
         let entry = ColorMapper.entry(for: currentSourceID, config: settings.config)
-        logger.info("sendCurrentEntry dimmed=\(self.isDimmed) bri=\(wled.brightness) force=\(force)")
+        logger.info("sendCurrentEntry dimmed=\(self.isDimmed) videoDimmed=\(self.isVideoDimmed) bri=\(wled.brightness) force=\(force)")
         await client.setEntry(rotated(entry), wled: wled, force: force)
+    }
+
+    private func handleVideoPlayback(isPlaying: Bool) async {
+        guard isPlaying != isVideoDimmed else { return }
+        isVideoDimmed = isPlaying
+        logger.info("Video fullscreen: \(isPlaying ? "dimming" : "restoring") WLED")
+        await sendCurrentEntry()
     }
 
     /// Applies the configured matrix rotation to a layout entry's pattern.
