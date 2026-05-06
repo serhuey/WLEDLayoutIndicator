@@ -287,7 +287,6 @@ First launch: right-click → **Open** → confirm. Enable **Launch at login** i
 
 ## Open items
 
-- **Per-app layout tracking** — macOS allows per-app input sources; could track them independently
 - **Developer ID signing / notarization** — currently unsigned
 
 ## License
