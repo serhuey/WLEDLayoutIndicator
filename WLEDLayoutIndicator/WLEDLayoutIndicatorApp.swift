@@ -46,7 +46,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             settings: store,
             monitor: LayoutMonitor(),
             client: WLEDClient(),
-            focusMonitor: AppFocusMonitor()
+            focusMonitor: AppFocusMonitor(),
+            videoMonitor: FullscreenVideoMonitor()
         )
         super.init()
     }
