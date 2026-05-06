@@ -51,6 +51,11 @@ public final class AppCoordinator: ObservableObject {
     /// Cancelled and replaced on every wake. Schedules redundant restore
     /// sends to recover from packets lost while Wi-Fi was reconnecting.
     private var wakeFollowUpTask: Task<Void, Never>?
+    /// Periodic consistency check: polls TIS for layout drift and re-sends
+    /// to WLED as a keepalive so the device recovers without user action.
+    private var heartbeatTask: Task<Void, Never>?
+    private static let heartbeatInterval: TimeInterval = 5
+    private static let wledKeepaliveEvery = 6   // ticks × heartbeatInterval = 30 s
     private let logger = Logger(subsystem: "com.wledlayout.indicator", category: "coordinator")
 
     public init(
@@ -111,6 +116,28 @@ public final class AppCoordinator: ObservableObject {
                 Task { await self.handleLayoutChange(sourceID: self.currentSourceID) }
             }
 
+        // Heartbeat: detect missed layout notifications + WLED keepalive.
+        heartbeatTask = Task { [weak self] in
+            var ticks = 0
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(Self.heartbeatInterval))
+                guard !Task.isCancelled, let self else { return }
+
+                // 1. Check for layout drift — TIS vs what we believe is active.
+                if let actual = LayoutMonitor.currentSourceID(), actual != self.currentSourceID {
+                    self.logger.warning("Heartbeat: layout drift — tracking \(self.currentSourceID, privacy: .public) but TIS says \(actual, privacy: .public). Re-syncing.")
+                    await self.handleLayoutChange(sourceID: actual)
+                }
+
+                // 2. WLED keepalive every 30 s — recovers from device reboots
+                //    and silent network drops without waiting for a layout change.
+                ticks += 1
+                if ticks % Self.wledKeepaliveEvery == 0 {
+                    await self.sendCurrentEntry(force: true)
+                }
+            }
+        }
+
         // If no host is configured yet, auto-discover on the network.
         if settings.config.wled.host.isEmpty {
             autoDiscoverHost()
@@ -158,6 +185,8 @@ public final class AppCoordinator: ObservableObject {
         monitorTask = nil
         focusTask?.cancel()
         focusTask = nil
+        heartbeatTask?.cancel()
+        heartbeatTask = nil
         wakeFollowUpTask?.cancel()
         wakeFollowUpTask = nil
         configObserver = nil
