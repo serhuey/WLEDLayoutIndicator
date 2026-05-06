@@ -24,12 +24,14 @@ Switch between English and Russian — the indicator instantly changes from blue
 - **Launch at login** via `SMAppService`
 - **Resilient networking** — retry with exponential backoff (100 ms → 300 ms → 1 s), request coalescing, 2 s timeout
 - **Per-app layout memory (opt-in)** — remembers which keyboard layout you last used in each foreground app (by bundle ID) and automatically restores it whenever you focus that app again. First-time apps are not changed; macOS's native *Automatically switch to a document's input source* can stay on (last writer wins, usually no friction) or be turned off if you prefer our scope only.
-- **Sleep / screensaver dimming** — dims WLED to brightness 2 on sleep/screensaver, restores on wake
+- **Sleep / screensaver dimming** — dims WLED on sleep/screensaver/screen lock, restores on wake
+- **Fullscreen video dimming** — dims WLED while any video player holds a display-sleep prevention assertion (QuickTime, VLC, IINA, browsers), restores when playback ends
+- **Heartbeat** — every 5 s verifies the active layout matches TIS and re-syncs if a notification was missed; every 30 s force-resends to WLED as a keepalive (recovers from device reboots and silent network drops)
 - **Floating Settings window** — always appears on top (required for agent apps without Dock presence)
 
 ## Download
 
-Latest release: **[WLEDLayoutIndicator-1.0.1.dmg](https://github.com/serhuey/WLEDLayoutIndicator/releases/download/v1.0.1/WLEDLayoutIndicator-1.0.1.dmg)** (Apple Silicon only · ad-hoc signed · ~2 MB)
+Latest release: **[WLEDLayoutIndicator-1.0.2.dmg](https://github.com/serhuey/WLEDLayoutIndicator/releases/download/v1.0.2/WLEDLayoutIndicator-1.0.2.dmg)** (Apple Silicon only · ad-hoc signed · ~2 MB)
 
 All releases on [GitHub Releases](https://github.com/serhuey/WLEDLayoutIndicator/releases).
 
@@ -240,7 +242,7 @@ Old v1 configs (with `mapping: {String: RGB}` and `defaultColor`) are automatica
 ```
 WLEDLayoutIndicator/
 ├── WLEDLayoutIndicatorApp.swift     # @main, NSApplicationDelegateAdaptor, MenuBarExtra
-├── AppCoordinator.swift             # monitor → mapper → rotation → client, sleep/wake dimming
+├── AppCoordinator.swift             # monitor → mapper → rotation → client, sleep/wake/video dimming, heartbeat
 ├── Core/
 │   ├── Models.swift                 # Config, RGB, Pattern, LayoutEntry, LinkStatus
 │   ├── SettingsStore.swift          # JSON persistence, first-launch auto-detect, v1 migration
@@ -248,11 +250,15 @@ WLEDLayoutIndicator/
 │   ├── ColorMapper.swift            # Pure (sourceID, Config) → LayoutEntry
 │   ├── WLEDClient.swift             # Actor: URLSession, per-pixel "i" API, retry/debounce
 │   ├── WLEDDiscovery.swift          # mDNS/Bonjour discovery via NWBrowser
-│   └── AppFocusMonitor.swift        # NSWorkspace front-app changes (per-app memory)
+│   ├── AppFocusMonitor.swift        # NSWorkspace front-app changes (per-app memory)
+│   └── FullscreenVideoMonitor.swift # IOKit PreventUserIdleDisplaySleep poll (video dimming)
 ├── UI/
 │   ├── StatusBarIcon.swift          # Menu-bar label (5×5 pattern preview, dark bg)
 │   ├── SettingsView.swift           # SwiftUI Form: host, brightness, rotation, patterns
-│   └── PatternEditor.swift          # 5×5 clickable grid + fill/clear presets
+│   ├── PatternEditor.swift          # 5×5 clickable grid + fill/clear presets
+│   ├── ColorPaletteControl.swift    # 4×4 preset colour grid + Custom… (NSColorPanel)
+│   ├── ColorPalette.swift           # 16 preset colours ordered by hue
+│   └── ColorPanelBridge.swift       # Singleton bridge to NSColorPanel
 └── Assets.xcassets/
 
 WLEDLayoutIndicatorTests/
@@ -281,7 +287,6 @@ First launch: right-click → **Open** → confirm. Enable **Launch at login** i
 
 ## Open items
 
-- **Heartbeat** — periodic re-send to recover if WLED reboots and loses state
 - **Per-app layout tracking** — macOS allows per-app input sources; could track them independently
 - **Developer ID signing / notarization** — currently unsigned
 
