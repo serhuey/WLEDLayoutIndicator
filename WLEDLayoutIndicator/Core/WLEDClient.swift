@@ -164,45 +164,35 @@ public actor WLEDClient {
     // MARK: - Animation
 
     private func runAnimation(from old: LayoutEntry, to new: LayoutEntry, wled: Config.WLED) async {
-        let rows = 5, cols = 5
-        let newRGB = new.color.jsonArray
-        let oldRGB = old.color.jsonArray
-
-        // Intermediate frames: fire-and-forget so they flash fast without blocking.
-        for step in [1, 3] {
-            var pixels = [[Int]](repeating: [0, 0, 0], count: wled.ledCount)
-            for row in 0..<rows {
-                for col in 0..<cols {
-                    let idx = row * cols + col
-                    guard idx < pixels.count else { continue }
-                    if row < step {
-                        pixels[idx] = new.pattern[row, col] ? newRGB : [0, 0, 0]
-                    } else {
-                        let srcRow = row - step
-                        pixels[idx] = old.pattern[srcRow, col] ? oldRGB : [0, 0, 0]
-                    }
-                }
-            }
-            let captured = pixels
-            Task.detached { [weak self] in
-                guard let self else { return }
-                try? await self.performSend(pixels: captured, baseColor: newRGB, wled: wled, transition: 0)
-            }
-        }
-
-        // Give intermediates time to arrive, then send the final frame awaited
-        // so it is guaranteed to land last and leave a clean final state.
-        try? await Task.sleep(for: .milliseconds(30))
+        // dim → black → full: a brief strobe that triggers peripheral vision
+        // without requiring a specific direction or spatial interpretation.
+        // Sequential sends guarantee frame order regardless of WiFi RTT.
+        try? await performSend(pixels: dimmedFrame(entry: old, factor: 0.15, wled: wled),
+                               baseColor: old.color.jsonArray, wled: wled, transition: 0)
         guard !Task.isCancelled else { return }
-        var finalPixels = [[Int]](repeating: [0, 0, 0], count: wled.ledCount)
-        for row in 0..<rows {
-            for col in 0..<cols {
-                let idx = row * cols + col
-                guard idx < finalPixels.count else { continue }
-                finalPixels[idx] = new.pattern[row, col] ? newRGB : [0, 0, 0]
-            }
+        try? await performSend(pixels: [[Int]](repeating: [0, 0, 0], count: wled.ledCount),
+                               baseColor: [0, 0, 0], wled: wled, transition: 0)
+        guard !Task.isCancelled else { return }
+        try? await performSend(pixels: fullFrame(entry: new, wled: wled),
+                               baseColor: new.color.jsonArray, wled: wled, transition: 0)
+    }
+
+    private nonisolated func dimmedFrame(entry: LayoutEntry, factor: Double, wled: Config.WLED) -> [[Int]] {
+        let dimmed = entry.color.jsonArray.map { max(0, Int(Double($0) * factor)) }
+        var pixels = [[Int]](repeating: [0, 0, 0], count: wled.ledCount)
+        for idx in 0..<min(entry.pattern.pixels.count, wled.ledCount) {
+            if entry.pattern.pixels[idx] { pixels[idx] = dimmed }
         }
-        try? await performSend(pixels: finalPixels, baseColor: newRGB, wled: wled, transition: 0)
+        return pixels
+    }
+
+    private nonisolated func fullFrame(entry: LayoutEntry, wled: Config.WLED) -> [[Int]] {
+        let rgb = entry.color.jsonArray
+        var pixels = [[Int]](repeating: [0, 0, 0], count: wled.ledCount)
+        for idx in 0..<min(entry.pattern.pixels.count, wled.ledCount) {
+            if entry.pattern.pixels[idx] { pixels[idx] = rgb }
+        }
+        return pixels
     }
 
     // MARK: - Send
