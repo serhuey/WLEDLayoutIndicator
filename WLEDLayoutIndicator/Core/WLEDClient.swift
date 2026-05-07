@@ -164,14 +164,11 @@ public actor WLEDClient {
     // MARK: - Animation
 
     private func runAnimation(from old: LayoutEntry, to new: LayoutEntry, wled: Config.WLED) async {
-        // dim → black → full: a brief strobe that triggers peripheral vision
-        // without requiring a specific direction or spatial interpretation.
-        // Sequential sends guarantee frame order regardless of WiFi RTT.
+        // dim → full: two sequential sends guarantee order, ~30 ms on local WiFi.
+        // The brightness drop catches peripheral vision; the black frame was
+        // removed to halve the total animation time.
         try? await performSend(pixels: dimmedFrame(entry: old, factor: 0.15, wled: wled),
                                baseColor: old.color.jsonArray, wled: wled, transition: 0)
-        guard !Task.isCancelled else { return }
-        try? await performSend(pixels: [[Int]](repeating: [0, 0, 0], count: wled.ledCount),
-                               baseColor: [0, 0, 0], wled: wled, transition: 0)
         guard !Task.isCancelled else { return }
         try? await performSend(pixels: fullFrame(entry: new, wled: wled),
                                baseColor: new.color.jsonArray, wled: wled, transition: 0)

@@ -18,7 +18,7 @@ Switch between English and Russian — the indicator instantly changes from blue
   - German → yellow · French → cyan · Spanish → orange
   - Unknown layouts → grey (fallback)
 - **Real-time brightness slider** — adjusts WLED brightness as you drag
-- **Layout switch animation** — on every layout change the matrix briefly dims, flashes black, then lights up in the new colour and pattern; the brightness spike reliably catches peripheral vision even when you're not looking directly at the device
+- **Layout switch animation** — on automatic layout restore (per-app memory) the matrix briefly dims then lights up in the new colour; the brightness change catches peripheral vision. Manual switches are instant
 - **Menu-bar only** — no Dock icon, just a 5×5 dot grid that mirrors the WLED pattern (original, un-rotated) in the current layout colour on a dark rounded background; rendered as non-template `NSImage` to bypass macOS menu bar template rendering
 - **"Re-detect layouts & WLED device"** — one-click reset to re-scan everything
 - **Launch at login** via `SMAppService`
@@ -31,7 +31,7 @@ Switch between English and Russian — the indicator instantly changes from blue
 
 ## Download
 
-Latest release: **[WLEDLayoutIndicator-1.0.4.dmg](https://github.com/serhuey/WLEDLayoutIndicator/releases/download/v1.0.4/WLEDLayoutIndicator-1.0.4.dmg)** (Apple Silicon only · ad-hoc signed · ~2 MB)
+Latest release: **[WLEDLayoutIndicator-1.0.5.dmg](https://github.com/serhuey/WLEDLayoutIndicator/releases/download/v1.0.5/WLEDLayoutIndicator-1.0.5.dmg)** (Apple Silicon only · ad-hoc signed · ~2 MB)
 
 All releases on [GitHub Releases](https://github.com/serhuey/WLEDLayoutIndicator/releases).
 

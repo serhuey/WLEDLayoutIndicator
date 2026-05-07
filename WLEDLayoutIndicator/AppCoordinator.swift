@@ -52,6 +52,9 @@ public final class AppCoordinator: ObservableObject {
     private var assertedSourceID: String?
     private var assertedUntil: Date?
     private static let assertWindow: TimeInterval = 1.2
+    /// Set to the sourceID we're about to auto-switch to via per-app memory.
+    /// `handleLayoutChange` reads this to decide whether to animate.
+    private var pendingAutoSwitchID: String?
     /// Cancelled and replaced on every wake. Schedules redundant restore
     /// sends to recover from packets lost while Wi-Fi was reconnecting.
     private var wakeFollowUpTask: Task<Void, Never>?
@@ -371,7 +374,13 @@ public final class AppCoordinator: ObservableObject {
         if isDimmed || isVideoDimmed {
             wled.brightness = Self.dimBrightness
         }
-        await client.transition(from: oldEntry, to: newEntry, wled: wled)
+        let animate = pendingAutoSwitchID == sourceID
+        pendingAutoSwitchID = nil
+        if animate {
+            await client.transition(from: oldEntry, to: newEntry, wled: wled)
+        } else {
+            await client.setEntry(newEntry, wled: wled)
+        }
         status = .ok(lastSent: entry.color)
     }
 
@@ -407,16 +416,14 @@ public final class AppCoordinator: ObservableObject {
         assertedLayoutForApp = bundleID
         assertedSourceID = saved
         assertedUntil = Date().addingTimeInterval(Self.assertWindow)
+        pendingAutoSwitchID = saved
         LayoutMonitor.selectInputSource(id: saved)
 
-        // Second assertion after the app's post-activation handling would
-        // typically fire. If user has meanwhile switched layout manually,
-        // currentSourceID will already equal `saved` and the early-out in
-        // selectInputSource short-circuits via the layout-change handler.
         try? await Task.sleep(for: .milliseconds(400))
         guard currentBundleID == bundleID,
               currentSourceID != saved else { return }
         logger.info("Re-asserting \(saved, privacy: .public) for \(bundleID, privacy: .public) (app fought back)")
+        pendingAutoSwitchID = saved
         LayoutMonitor.selectInputSource(id: saved)
     }
 
