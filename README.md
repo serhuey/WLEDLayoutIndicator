@@ -21,7 +21,7 @@ Switch between English and Russian — the indicator instantly changes from blue
 - **Layout switch animation** — on automatic layout restore (per-app memory) the matrix briefly dims then lights up in the new colour; the brightness change catches peripheral vision. Manual switches are instant
 - **Menu-bar only** — no Dock icon, just a 5×5 dot grid that mirrors the WLED pattern (original, un-rotated) in the current layout colour on a dark rounded background; rendered as non-template `NSImage` to bypass macOS menu bar template rendering
 - **"Re-detect layouts & WLED device"** — one-click reset to re-scan everything
-- **Launch at login** via `SMAppService`
+- **Launch at login + auto-recovery** — registered as a LaunchAgent via `SMAppService.agent`; if macOS kills the process under load (jetsam, ResponsivenessChecker, etc.), launchd respawns it automatically
 - **Resilient networking** — retry with exponential backoff (100 ms → 300 ms → 1 s), request coalescing, 2 s timeout
 - **Per-app layout memory (opt-in)** — remembers which keyboard layout you last used in each foreground app (by bundle ID) and automatically restores it whenever you focus that app again. First-time apps are not changed; macOS's native *Automatically switch to a document's input source* can stay on (last writer wins, usually no friction) or be turned off if you prefer our scope only.
 - **Sleep / screensaver dimming** — dims WLED on sleep/screensaver/screen lock, restores on wake
@@ -31,7 +31,7 @@ Switch between English and Russian — the indicator instantly changes from blue
 
 ## Download
 
-Latest release: **[WLEDLayoutIndicator-1.0.5.dmg](https://github.com/serhuey/WLEDLayoutIndicator/releases/download/v1.0.5/WLEDLayoutIndicator-1.0.5.dmg)** (Apple Silicon only · ad-hoc signed · ~2 MB)
+Latest release: **[WLEDLayoutIndicator-1.0.6.dmg](https://github.com/serhuey/WLEDLayoutIndicator/releases/download/v1.0.6/WLEDLayoutIndicator-1.0.6.dmg)** (Apple Silicon only · ad-hoc signed · ~2 MB)
 
 All releases on [GitHub Releases](https://github.com/serhuey/WLEDLayoutIndicator/releases).
 
@@ -251,7 +251,8 @@ WLEDLayoutIndicator/
 │   ├── WLEDClient.swift             # Actor: URLSession, per-pixel "i" API, retry/debounce
 │   ├── WLEDDiscovery.swift          # mDNS/Bonjour discovery via NWBrowser
 │   ├── AppFocusMonitor.swift        # NSWorkspace front-app changes (per-app memory)
-│   └── FullscreenVideoMonitor.swift # IOKit PreventUserIdleDisplaySleep poll (video dimming)
+│   ├── FullscreenVideoMonitor.swift # IOKit PreventUserIdleDisplaySleep poll (video dimming)
+│   └── LaunchAgent.swift            # SMAppService.agent registration + Login Item → Agent migration
 ├── UI/
 │   ├── StatusBarIcon.swift          # Menu-bar label (5×5 pattern preview, dark bg)
 │   ├── SettingsView.swift           # SwiftUI Form: host, brightness, rotation, patterns

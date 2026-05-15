@@ -358,9 +358,9 @@ struct SettingsView: View {
     private func applyLaunchAtLogin(_ enabled: Bool) {
         do {
             if enabled {
-                try SMAppService.mainApp.register()
+                try LaunchAgent.service.register()
             } else {
-                try SMAppService.mainApp.unregister()
+                try LaunchAgent.service.unregister()
             }
         } catch {
             // Intentionally silent; surface via a toast in a future iteration.

@@ -63,6 +63,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ProcessInfo.processInfo.disableSuddenTermination()
         ProcessInfo.processInfo.disableAutomaticTermination("Menu-bar indicator with live WLED connection")
 
+        // Recover automatically from involuntary kills (jetsam,
+        // ResponsivenessChecker) that disable*Termination can't prevent.
+        LaunchAgent.migrateLoginItemIfNeeded()
+
         coordinator.start()
 
         // Agent apps (LSUIElement) can't reliably activate to the foreground.
