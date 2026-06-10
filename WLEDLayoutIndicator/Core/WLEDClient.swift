@@ -41,11 +41,16 @@ public actor WLEDClient {
         }
     }
 
-    public enum ClientError: Error, Equatable {
+    public enum ClientError: Error, Equatable, Sendable {
         case badResponse(status: Int)
         case transport(String)
         case allRetriesFailed
     }
+
+    /// Called on the main actor after each queued send finally succeeds or
+    /// exhausts its retries. Lets the UI reflect real delivery status instead
+    /// of assuming success at enqueue time.
+    public typealias SendResultHandler = @MainActor @Sendable (Result<LayoutEntry, ClientError>) -> Void
 
     // MARK: - State
 
@@ -59,6 +64,7 @@ public actor WLEDClient {
     private var lastSentKey: DedupKey?
     private var runner: Task<Void, Never>?
     private var animationTask: Task<Void, Never>?
+    private var sendResultHandler: SendResultHandler?
 
     /// Captures everything that should trigger a re-send when changed.
     private nonisolated struct DedupKey: Equatable {
@@ -78,6 +84,11 @@ public actor WLEDClient {
     }
 
     // MARK: - Public API
+
+    /// Registers the delivery-status callback. Replaces any previous handler.
+    public func setSendResultHandler(_ handler: @escaping SendResultHandler) {
+        sendResultHandler = handler
+    }
 
     /// Queue a layout entry (colour + pattern) to be sent to WLED. Returns immediately.
     /// The actor will coalesce rapid calls and deliver only the latest.
@@ -110,10 +121,12 @@ public actor WLEDClient {
         let key = DedupKey(entry: new, brightness: wled.brightness)
         animationTask = Task {
             await self.runAnimation(from: old, to: new, wled: wled)
+            // Same guard as in drain(): a cancelled animation must not nil out
+            // the newer task that replaced it.
             if !Task.isCancelled {
                 self.lastSentKey = key
+                self.animationTask = nil
             }
-            self.animationTask = nil
         }
     }
 
@@ -126,15 +139,27 @@ public actor WLEDClient {
     // MARK: - Run loop
 
     private func drain() async {
-        defer { runner = nil }
+        // Only clear `runner` when WE are still the active runner. A cancelled
+        // drain (superseded by `transition()`) must not nil out a newer task
+        // that took its place — that would let a third runner start in
+        // parallel with the second.
+        defer { if !Task.isCancelled { runner = nil } }
 
         while let current = pending {
             pending = nil
+            if Task.isCancelled { return }
             do {
                 try await sendWithRetry(entry: current.entry, wled: current.wled)
                 lastSentKey = DedupKey(entry: current.entry, brightness: current.wled.brightness)
+                if let handler = sendResultHandler {
+                    await handler(.success(current.entry))
+                }
             } catch {
                 logger.error("WLED send failed: \(String(describing: error), privacy: .public)")
+                if let handler = sendResultHandler {
+                    let clientError = error as? ClientError ?? .transport(String(describing: error))
+                    await handler(.failure(clientError))
+                }
             }
         }
     }

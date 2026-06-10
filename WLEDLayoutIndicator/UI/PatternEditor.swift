@@ -2,13 +2,10 @@ import SwiftUI
 
 /// A 5×5 clickable grid for editing which LEDs are on/off.
 /// Each cell is a square that toggles between the layout's colour (on)
-/// and a dim background (off) on click. Drag across cells to paint.
+/// and a dim background (off) on click.
 struct PatternEditor: View {
     @Binding var pattern: Pattern
     var color: Color
-
-    /// Track whether we're painting on or off during a drag gesture.
-    @State private var paintValue: Bool?
 
     private let gridSize = 5
     private let cellSize: CGFloat = 24
@@ -39,22 +36,4 @@ struct PatternEditor: View {
                 pattern[row, col].toggle()
             }
     }
-
-    // MARK: - Presets
-
-    /// Fill / Clear buttons stacked vertically, aligned to the trailing edge.
-    struct Presets: View {
-        @Binding var pattern: Pattern
-
-        var body: some View {
-            VStack(spacing: 4) {
-                Button("Fill")  { pattern = .solid  }.frame(maxWidth: .infinity)
-                Button("Clear") { pattern = .blank }.frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .frame(width: 76)
-        }
-    }
 }
-

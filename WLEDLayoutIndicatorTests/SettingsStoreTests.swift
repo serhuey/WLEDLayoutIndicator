@@ -66,4 +66,52 @@ final class SettingsStoreTests: XCTestCase {
         store.update { _ in /* no mutation */ }
         XCTAssertEqual(store.config, before)
     }
+
+    // MARK: - v1 migration
+
+    func test_loadV1Config_migratesToCurrentSchema() throws {
+        // Pre-pattern format: mapping was [String: RGB], "defaultColor"
+        // instead of "defaultEntry", no rotation / per-app fields.
+        let v1JSON = """
+        {
+          "wled": { "host": "192.168.1.42", "brightness": 200, "segmentId": 1, "ledCount": 25 },
+          "mapping": {
+            "com.apple.keylayout.US": { "r": 0, "g": 120, "b": 255 },
+            "com.apple.keylayout.Russian": { "r": 255, "g": 40, "b": 40 }
+          },
+          "defaultColor": { "r": 80, "g": 80, "b": 80 },
+          "launchAtLogin": true
+        }
+        """
+        let file = tmpDir.appendingPathComponent("config.json")
+        try Data(v1JSON.utf8).write(to: file)
+
+        let store = SettingsStore(directory: tmpDir, systemSourceIDs: [])
+        let config = store.config
+
+        XCTAssertEqual(config.wled.host, "192.168.1.42")
+        XCTAssertEqual(config.wled.brightness, 200)
+        XCTAssertEqual(config.wled.segmentId, 1)
+        XCTAssertEqual(config.mapping["com.apple.keylayout.US"],
+                       LayoutEntry(color: RGB(r: 0, g: 120, b: 255), pattern: .solid))
+        XCTAssertEqual(config.mapping["com.apple.keylayout.Russian"]?.color,
+                       RGB(r: 255, g: 40, b: 40))
+        XCTAssertEqual(config.defaultEntry, LayoutEntry(color: RGB(r: 80, g: 80, b: 80)))
+        XCTAssertTrue(config.launchAtLogin)
+        // New fields fall back to defaults.
+        XCTAssertEqual(config.matrixRotation, 0)
+        XCTAssertFalse(config.autoSwitchOnAppFocus)
+        XCTAssertTrue(config.appLayoutMemory.isEmpty)
+    }
+
+    func test_corruptConfig_fallsBackToFirstLaunchDefaults() throws {
+        let file = tmpDir.appendingPathComponent("config.json")
+        try Data("not json at all".utf8).write(to: file)
+
+        let store = SettingsStore(directory: tmpDir,
+                                  systemSourceIDs: ["com.apple.keylayout.US"])
+        XCTAssertEqual(store.config.mapping.count, 1)
+        XCTAssertEqual(store.config.mapping["com.apple.keylayout.US"]?.color,
+                       RGB(r: 0, g: 120, b: 255))
+    }
 }

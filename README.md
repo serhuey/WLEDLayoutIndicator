@@ -40,7 +40,7 @@ Open the DMG, drag the app into **Applications**. Because the build is ad-hoc si
 ## Requirements
 
 - macOS 13 Ventura or newer · Apple Silicon (the prebuilt DMG is arm64 only; build from source for Intel)
-- Xcode 15+ (developed with Xcode 26.4 / Swift 6.3) — only needed if building from source
+- Xcode 26+ (developed with Xcode 26.4 / Swift 6.3; the project uses Swift features unavailable in older Xcode) — only needed if building from source
 - Any ESP32 device running [WLED](https://kno.wled.ge/) firmware, reachable on your LAN by IP or `.local` mDNS name
 - Tested with M5Stack Atom Matrix (5×5 = 25 SK6812 LEDs)
 

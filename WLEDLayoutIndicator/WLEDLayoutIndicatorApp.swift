@@ -52,7 +52,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         super.init()
     }
 
-    private var windowObserver: Any?
+    private var windowObservers: [NSObjectProtocol] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Tell macOS we're not a cache — we have a live menu-bar presence,
@@ -75,8 +75,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // didBecomeMain — with SettingsLink the window may become main before
         // becoming key, and hooking only didBecomeKey misses that case.
         let log = Logger(subsystem: "com.wledlayout.indicator", category: "window")
-        let hook: (Notification) -> Void = { notification in
+        let hook: @Sendable (Notification) -> Void = { notification in
+            // NSPanel covers NSColorPanel and alert panels — those manage
+            // their own level/ordering; floating them breaks panel stacking.
             guard let window = notification.object as? NSWindow,
+                  !(window is NSPanel),
                   window.canBecomeKey else { return }
             MainActor.assumeIsolated {
                 log.info("\(notification.name.rawValue, privacy: .public) on \(window.title, privacy: .public)")
@@ -86,15 +89,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         let center = NotificationCenter.default
-        windowObserver = center.addObserver(
+        windowObservers.append(center.addObserver(
             forName: NSWindow.didBecomeKeyNotification,
-            object: nil, queue: .main, using: hook)
-        _ = center.addObserver(
+            object: nil, queue: .main, using: hook))
+        windowObservers.append(center.addObserver(
             forName: NSWindow.didBecomeMainNotification,
-            object: nil, queue: .main, using: hook)
+            object: nil, queue: .main, using: hook))
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        for o in windowObservers {
+            NotificationCenter.default.removeObserver(o)
+        }
+        windowObservers = []
         coordinator.stop()
     }
 }

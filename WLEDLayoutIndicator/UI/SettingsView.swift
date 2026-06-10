@@ -9,7 +9,9 @@ struct SettingsView: View {
 
     @StateObject private var discovery = WLEDDiscovery()
     @State private var testResult: TestResult = .none
-    @State private var newSourceID: String = ""
+    /// Keeps the host-pick subscription from `resetAutoConfig` alive without
+    /// the closure retaining itself (which leaks when nothing is found).
+    @State private var hostPickCancellable: AnyCancellable?
 
     enum TestResult: Equatable {
         case none, running, ok, failed(String)
@@ -133,15 +135,23 @@ struct SettingsView: View {
                         }
                     }
                 }
+
+                Menu("Add layout…") {
+                    ForEach(unmappedSourceIDs, id: \.self) { id in
+                        Button(id) { addMapping(id) }
+                    }
+                }
+                .disabled(unmappedSourceIDs.isEmpty)
+                .help(unmappedSourceIDs.isEmpty
+                      ? "All installed keyboard layouts are already mapped"
+                      : "Add an installed keyboard layout back to the mapping")
             }
-            
-  
+
             Section("Reset") {
                 Button("Re-detect layouts & WLED device") {
                     resetAutoConfig()
                 }
-                .foregroundStyle(.red)
-                Text("Re-scans installed keyboard layouts and searches for a WLED device on the network. Replaces current host and layout mappings.")
+                Text("Adds any installed keyboard layouts missing from the mapping (existing colours and patterns are kept) and searches the network for a WLED device to use as the host.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -183,6 +193,9 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .padding(20)
+        // The user can disable the agent in System Settings → Login Items
+        // behind our back; reconcile the stored flag with reality on open.
+        .onAppear { syncLaunchAtLogin() }
     }
 
 
@@ -190,6 +203,14 @@ struct SettingsView: View {
 
     private var sortedSourceIDs: [String] {
         settings.config.mapping.keys.sorted()
+    }
+
+    /// Installed, enabled keyboard layouts that have no mapping entry yet —
+    /// candidates for the "Add layout…" menu (e.g. after deleting a row).
+    private var unmappedSourceIDs: [String] {
+        LayoutMonitor.enabledKeyboardSourceIDs()
+            .filter { settings.config.mapping[$0] == nil }
+            .sorted()
     }
 
     /// Version + executable mtime. The bundle version rarely bumps in dev,
@@ -255,20 +276,6 @@ struct SettingsView: View {
         )
     }
 
-    private var defaultColorBinding: Binding<Color> {
-        Binding(
-            get: { settings.config.defaultEntry.color.swiftUI },
-            set: { v in settings.update { $0.defaultEntry.color = v.rgb } }
-        )
-    }
-
-    private var defaultPatternBinding: Binding<Pattern> {
-        Binding(
-            get: { settings.config.defaultEntry.pattern },
-            set: { v in settings.update { $0.defaultEntry.pattern = v } }
-        )
-    }
-
     private func colorBinding(for id: String) -> Binding<Color> {
         Binding(
             get: { (settings.config.mapping[id]?.color ?? settings.config.defaultEntry.color).swiftUI },
@@ -314,31 +321,30 @@ struct SettingsView: View {
     // MARK: - Actions
 
     private func resetAutoConfig() {
-        // 1. Re-detect keyboard layouts
+        // 1. Re-detect keyboard layouts: add missing ones with their preset
+        //    colour, keep existing colours/patterns untouched.
         let ids = LayoutMonitor.enabledKeyboardSourceIDs()
         settings.update { config in
-            config.mapping = Config.buildMapping(for: ids)
+            for id in ids where config.mapping[id] == nil {
+                config.mapping[id] = LayoutEntry(color: Config.knownColor(for: id))
+            }
         }
 
         // 2. Re-discover WLED device
         discovery.start()
-        var observer: AnyCancellable?
-        observer = discovery.$devices
+        hostPickCancellable = discovery.$devices
             .filter { !$0.isEmpty }
             .first()
             .sink { [settings] devices in
                 if let first = devices.first {
                     settings.update { $0.wled.host = first.hostname }
                 }
-                observer?.cancel()
             }
     }
 
-    private func addMapping() {
-        let id = newSourceID.trimmingCharacters(in: .whitespaces)
-        guard !id.isEmpty else { return }
-        settings.update { $0.mapping[id] = $0.defaultEntry }
-        newSourceID = ""
+    /// Adds an installed layout back to the mapping with its preset colour.
+    private func addMapping(_ id: String) {
+        settings.update { $0.mapping[id] = LayoutEntry(color: Config.knownColor(for: id)) }
     }
 
     private func removeMapping(_ id: String) {
@@ -363,7 +369,18 @@ struct SettingsView: View {
                 try LaunchAgent.service.unregister()
             }
         } catch {
-            // Intentionally silent; surface via a toast in a future iteration.
+            // Registration failed (e.g. pending approval in System Settings).
+            // Snap the toggle back to the real state so the UI never lies.
+            syncLaunchAtLogin()
+        }
+    }
+
+    /// Aligns the persisted `launchAtLogin` flag with the actual SMAppService
+    /// registration, which the user can change in System Settings directly.
+    private func syncLaunchAtLogin() {
+        let actual = LaunchAgent.service.status == .enabled
+        if settings.config.launchAtLogin != actual {
+            settings.update { $0.launchAtLogin = actual }
         }
     }
 }

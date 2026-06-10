@@ -25,6 +25,11 @@ public final class AppCoordinator: ObservableObject {
     private var videoTask: Task<Void, Never>?
     private var configObserver: AnyCancellable?
     private var sleepObservers: [NSObjectProtocol] = []
+    /// Retained here (not captured in their own sink — that's a retain cycle
+    /// that leaks when no device is ever found). Released once a host is picked
+    /// or in `stop()`.
+    private var discovery: WLEDDiscovery?
+    private var discoveryCancellable: AnyCancellable?
     /// When true, we override brightness to `dimBrightness` instead of config value.
     private var isDimmed = false
     /// Independently dimmed when fullscreen video is playing (IOKit assertion).
@@ -83,6 +88,22 @@ public final class AppCoordinator: ObservableObject {
         monitor.start()
         focusMonitor.start()
         videoMonitor.start()
+
+        // Surface real delivery results: `handleLayoutChange` sets `.ok`
+        // optimistically at enqueue time; this corrects it to `.failed` when
+        // all retries are exhausted (and back to `.ok` once a send lands).
+        let client = self.client
+        Task {
+            await client.setSendResultHandler { [weak self] result in
+                guard let self else { return }
+                switch result {
+                case .success(let entry):
+                    self.status = .ok(lastSent: entry.color)
+                case .failure(let error):
+                    self.status = .failed(message: String(describing: error))
+                }
+            }
+        }
 
         // Clean up any excluded-bundle entries that may have been recorded
         // before the exclusion list existed (e.g. com.apple.loginwindow
@@ -181,21 +202,20 @@ public final class AppCoordinator: ObservableObject {
     /// Runs mDNS discovery once and picks the first matching device.
     private func autoDiscoverHost() {
         let discovery = WLEDDiscovery()
+        self.discovery = discovery
         discovery.start()
 
         // Observe results for up to 5 seconds (discovery auto-stops).
-        var observer: AnyCancellable?
-        observer = discovery.$devices
+        discoveryCancellable = discovery.$devices
             .filter { !$0.isEmpty }
             .first()
             .sink { [weak self] devices in
                 guard let self, let first = devices.first else { return }
                 self.logger.info("Auto-discovered WLED: \(first.hostname, privacy: .public)")
                 self.settings.update { $0.wled.host = first.hostname }
-                observer?.cancel()
+                self.discoveryCancellable = nil
+                self.discovery = nil
             }
-        // The AnyCancellable is retained by the closure via `observer` until
-        // it fires or discovery times out and gets deallocated.
     }
 
     public func stop() {
@@ -210,6 +230,9 @@ public final class AppCoordinator: ObservableObject {
         wakeFollowUpTask?.cancel()
         wakeFollowUpTask = nil
         configObserver = nil
+        discoveryCancellable = nil
+        discovery?.stop()
+        discovery = nil
         for o in sleepObservers {
             NSWorkspace.shared.notificationCenter.removeObserver(o)
             DistributedNotificationCenter.default().removeObserver(o)
